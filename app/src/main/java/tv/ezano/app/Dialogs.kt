@@ -96,11 +96,11 @@ import java.time.format.DateTimeFormatter
         }
     }
     LaunchedEffect(original.id) {if(c.kind==Kind.SERIES) loadEpisodes(); val p=s.providers.firstOrNull {it.id==c.provider}; if(p!=null && c.kind==Kind.MOVIE) runCatching {withContext(Dispatchers.IO) {Sources.details(p,c)}}.onSuccess {c=it} }
-    Modal(c.name,onDismiss) {
+    Modal(if(c.kind==Kind.LIVE) c.name else HomeRecommendations.title(c),onDismiss) {
         val windowFocused=LocalWindowInfo.current.isWindowFocused
         val inputMode=LocalInputModeManager.current
         LaunchedEffect(original.id,windowFocused){if(windowFocused){inputMode.requestInputMode(InputMode.Keyboard);delay(80);runCatching {watchFocus.requestFocus()}}}
-        Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {Art(c.backdrop.ifBlank {c.logo},Modifier.width(160.dp).height(97.dp));Column {Text(listOf(c.year,c.group,if(c.rating.isNotBlank()) "Rating ${c.rating}" else "").filter {it.isNotBlank()}.joinToString(" · "),color=LocalAccent.current,fontSize=11.sp);Text(c.description.ifBlank {if(c.kind==Kind.LIVE) a.store.now(c)?.description?.ifBlank {"Live channel from your playlist"}?:"Live channel from your playlist" else "Open this title to watch from your provider."},color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=10.dp))}}
+        Row(horizontalArrangement=Arrangement.spacedBy(18.dp)) {Art(c.backdrop.ifBlank {c.logo},Modifier.width(160.dp).height(97.dp));Column {Text(listOf(c.year.take(4),c.group,if(c.rating.isNotBlank()) "Rating ${c.rating}" else "").filter {it.isNotBlank()}.joinToString(" · "),color=LocalAccent.current,fontSize=11.sp);Text(c.description.ifBlank {if(c.kind==Kind.LIVE) a.store.now(c)?.description?.ifBlank {"Live channel from your playlist"}?:"Live channel from your playlist" else "Open this title to watch from your provider."},color=Muted,fontSize=12.sp,modifier=Modifier.padding(top=10.dp))}}
         if(c.provider=="demo") Text("Playable open film demo · Blender Foundation · CC BY 3.0",color=Muted,fontSize=10.sp)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             EzButton(if((s.positions[c.id]?:0)>0 || resumeEpisode!=null) "Resume" else "Watch",Icons.Outlined.PlayArrow,primary=true,modifier=Modifier.focusRequester(watchFocus),onClick={if(failure.isNotBlank() && c.kind==Kind.SERIES){pendingWatch=true;a.scope.launch {loadEpisodes()}}else watch()})

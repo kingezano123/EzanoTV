@@ -56,7 +56,7 @@ val LocalMotion=staticCompositionLocalOf { true }
         // Movie and series names are often much longer than channel names. Reserve two
         // readable lines so they don't disappear behind a one-line ellipsis or jump in height.
         Text(if(c.kind==Kind.EPISODE) c.group else HomeRecommendations.title(c),color=Color.White,fontSize=11.sp,lineHeight=14.sp,fontWeight=FontWeight.Medium,minLines=1,maxLines=2,overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth().padding(start=3.dp,top=7.dp,end=3.dp))
-        Text(sub.ifBlank {if(c.kind==Kind.EPISODE) c.name.substringBefore("  ") else c.year},color=Muted,fontSize=8.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(start=3.dp,top=3.dp,bottom=5.dp,end=3.dp))
+        Text(sub.ifBlank {if(c.kind==Kind.EPISODE) c.name.substringBefore("  ") else c.year.take(4)},color=Muted,fontSize=8.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(start=3.dp,top=3.dp,bottom=5.dp,end=3.dp))
     }
 }
 @Composable fun Modal(title: String,onDismiss: ()->Unit,content: @Composable ColumnScope.()->Unit) {

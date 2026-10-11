@@ -214,11 +214,11 @@ class Store(private val context: Context) {
     private fun decrypt(b: ByteArray): String { val c=Cipher.getInstance("AES/GCM/NoPadding"); c.init(Cipher.DECRYPT_MODE,key(false),GCMParameterSpec(128,b.copyOfRange(0,12))); return String(c.doFinal(b.copyOfRange(12,b.size))) }
     private fun readLegacy(): Library {
         val total=legacyFile.baseFile.length().coerceAtLeast(1)
-        var read=0L;var shown=-1
+        var consumed=0L;var shown=-1
         fun counted(raw:java.io.InputStream)=object:java.io.FilterInputStream(raw){
             override fun read():Int=super.read().also {if(it>=0) advance(1)}
             override fun read(bytes:ByteArray,offset:Int,length:Int):Int=this.`in`.read(bytes,offset,length).also {if(it>0) advance(it)}
-            fun advance(n:Int){read+=n;val percent=(read*100/total).toInt().coerceIn(0,99);if(percent!=shown){shown=percent;openingStatus.value="Speeding up your library · one-time upgrade · $percent%"}}
+            fun advance(n:Int){consumed+=n;val percent=(consumed*100/total).toInt().coerceIn(0,99);if(percent!=shown){shown=percent;openingStatus.value="Speeding up your library · one-time upgrade · $percent%"}}
         }.buffered(65536)
         return legacyFile.openRead().use {raw->
             counted(raw).use {input->
