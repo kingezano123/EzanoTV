@@ -4,7 +4,7 @@ A native Android TV / Fire TV IPTV player with a black, content-first interface,
 
 ## Install and watch
 
-[Download the signed APK](https://github.com/kingezano123/EzanoTV/releases/latest/download/Ezano-TV.apk). 0.4.0 uses a new signing key, so uninstall 0.3.x first. To keep your favorites and progress, back up in 0.3.x (Settings → Back up your library) and restore in 0.4.0. Later updates install over 0.4.0.
+[Download the signed APK](https://github.com/kingezano123/EzanoTV/releases/latest/download/Ezano-TV.apk). 0.4.0 uses a new signing key, so uninstall 0.3.x first. To keep your favorites and progress, back up in 0.3.x (Settings → Back up your library) and restore in 0.4.0. Until the repository signing secrets are configured, each release is signed with a one-off key and also needs a reinstall.
 
 Open Playlists → Add playlist and enter your own Xtream Codes or M3U details. Credentials remain encrypted on the device. No commercial subscriptions, channels, or catalog are bundled.
 
@@ -46,7 +46,7 @@ Favorites, groups, hiding, PIN protection, encrypted backups, reminders, compati
 
 ## Build
 
-GitHub Actions (`.github/workflows/android.yml`) runs the unit tests and builds the release APK on every push. Pushing a `v*` tag publishes a GitHub release with `Ezano-TV.apk`, using the repository secrets `EZANO_KEYSTORE_BASE64` (base64 of the .jks, alias `ezano`) and `EZANO_STORE_PASSWORD`. Without those secrets, branch builds are signed with a throwaway test key and releases are refused.
+GitHub Actions (`.github/workflows/android.yml`) runs the unit tests and builds the release APK on every push. Pushing a `v*` tag publishes a GitHub release with `Ezano-TV.apk`, using the repository secrets `EZANO_KEYSTORE_BASE64` (base64 of the .jks, alias `ezano`) and `EZANO_STORE_PASSWORD`. Without those secrets, builds and releases are signed with a one-off key generated on the runner.
 
 Locally: JDK 17+, Android SDK platform 35 and build tools 35.0.0, then `./gradlew assembleDebug testDebugUnitTest`. For a signed release set EZANO_KEYSTORE and EZANO_STORE_PASSWORD, then `./gradlew assembleRelease`. Keep the signing key: updates must be signed with it.
 

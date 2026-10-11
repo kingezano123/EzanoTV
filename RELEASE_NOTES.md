@@ -2,7 +2,7 @@ Ezano TV 0.4.0 opens in seconds, puts famous kids movies on Home, and adds free 
 
 **Download Ezano-TV.apk below** · Android 8+ · package `tv.ezano.app` · version code 12.
 
-> **One-time reinstall:** this release is signed with a new key, because the key that signed 0.3.x is not available. Android cannot install it over 0.3.1. To keep your favorites and progress: in 0.3.1 open **Settings → Back up your library**, then uninstall Ezano, install this APK and use **Settings → Restore a backup**. Or simply re-add your playlist under **Playlists**. Future updates install over 0.4.0 normally.
+> **Reinstall required:** this release is signed with a new key, because the key that signed 0.3.x is not available. Android cannot install it over 0.3.1. To keep your favorites and progress: in 0.3.1 open **Settings → Back up your library**, then uninstall Ezano, install this APK and use **Settings → Restore a backup**. Or simply re-add your playlist under **Playlists**. The next update may need the same reinstall, so keep a recent backup.
 
 ### Fast startup
 - The saved library is no longer decrypted through the TV's secure hardware in thousands of small steps. Only one small key goes through it per launch. The rest is decrypted in software, which on Fire TV turns minutes into a few seconds.
