@@ -47,6 +47,7 @@ class EventSearchIndex(context: Context, name: String = "event-search-v1.db") {
             execSQL("CREATE TABLE IF NOT EXISTS events (rowid INTEGER PRIMARY KEY, id TEXT NOT NULL, channel TEXT NOT NULL, starts INTEGER NOT NULL, ends INTEGER NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL)")
             execSQL("CREATE INDEX IF NOT EXISTS event_times ON events(ends,starts)")
             execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS event_text USING fts4(title,description,tokenize=unicode61,prefix='2,3,4')")
+            execSQL("CREATE TABLE IF NOT EXISTS event_meta (id INTEGER PRIMARY KEY CHECK (id=1), signature TEXT NOT NULL)")
         }
     }
 
@@ -54,8 +55,15 @@ class EventSearchIndex(context: Context, name: String = "event-search-v1.db") {
         mutex.withLock { prepareLocked(programs) }
     }
 
+    /** Identifies a guide snapshot without decoding it; reopening an unchanged guide reuses the index. */
+    private fun signature(programs: List<Program>): String =
+        if(programs.isEmpty()) "empty" else "v1:${programs.size}:${programs.first().id}:${programs[programs.size/2].id}:${programs.last().id}"
+
     private suspend fun prepareLocked(programs: List<Program>) {
         if(indexed === programs) return
+        val signature = signature(programs)
+        val stored = db.rawQuery("SELECT signature FROM event_meta WHERE id=1", null).use { if(it.moveToFirst()) it.getString(0) else null }
+        if(stored == signature) { indexed = programs; return }
         val coroutine = currentCoroutineContext()
         db.beginTransaction()
         try {
@@ -75,6 +83,7 @@ class EventSearchIndex(context: Context, name: String = "event-search-v1.db") {
                 }
             }
             coroutine.ensureActive()
+            db.execSQL("INSERT OR REPLACE INTO event_meta(id,signature) VALUES (1,?)", arrayOf(signature))
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
         indexed = programs

@@ -6,9 +6,11 @@ android {
         applicationId = "tv.ezano.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "0.3.1"
+        versionCode = 12
+        versionName = "0.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Fire TV and Android TV devices are ARM; skipping x86 speech libraries keeps the download small.
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

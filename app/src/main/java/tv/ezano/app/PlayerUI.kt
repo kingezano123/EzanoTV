@@ -56,9 +56,15 @@ private fun playbackTime(ms: Long): String {val sec=(ms.coerceAtLeast(0)/1000);r
     SideEffect {a.playerDialogOpen=dialogOpen};DisposableEffect(a){onDispose{a.playerDialogOpen=false}}
     LaunchedEffect(toolsVisible,dialogOpen){if(toolsVisible && !dialogOpen){delay(60);runCatching {playFocus.requestFocus()}}}
     LaunchedEffect(toolsVisible,a.playerControlsInteraction,dialogOpen,s.prefs.panelSeconds){if(toolsVisible && !dialogOpen){delay(s.prefs.panelSeconds.coerceIn(2,30)*1000L);a.hidePlayerControls()}}
+    var retries by remember(p) {mutableIntStateOf(0)};val recovery=rememberCoroutineScope()
     DisposableEffect(p){val listener=object:Player.Listener {
-        override fun onPlayerError(error:PlaybackException){status="This stream was interrupted. Check your connection or try again."}
-        override fun onPlaybackStateChanged(state:Int){if(state==Player.STATE_READY)status=""}
+        override fun onPlayerError(error:PlaybackException){
+            // Live streams reconnect by themselves a few times before asking; falling behind the live window jumps to live.
+            if(error.errorCode==PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW){p.seekToDefaultPosition();p.prepare();return}
+            if(c.kind==Kind.LIVE && retries<3){retries++;recovery.launch {delay(1500L*retries);p.prepare();p.play()};return}
+            status="This stream was interrupted. Check your connection or try again."
+        }
+        override fun onPlaybackStateChanged(state:Int){if(state==Player.STATE_READY){status="";retries=0}}
         override fun onIsPlayingChanged(value:Boolean){isPlaying=value}
     };p.addListener(listener);onDispose{p.removeListener(listener);p.volume=1f}}
     LaunchedEffect(p){while(true){position=p.currentPosition;duration=p.duration.coerceAtLeast(0);delay(350)}}
@@ -95,8 +101,8 @@ private fun playbackTime(ms: Long): String {val sec=(ms.coerceAtLeast(0)/1000);r
         if(status.isNotBlank())Column(Modifier.align(Alignment.Center).width(420.dp).background(Panel,RoundedCornerShape(4.dp)).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){Text(status,color=Color.White,fontSize=14.sp);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){EzButton("Retry",primary=true,onClick={status="";p.prepare();p.play()});EzButton("Back",onClick={a.stopPlayback()})}}
     }
     if(captions)Modal("Audio & subtitles",{captions=false}){
-        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){EzButton("Audio",Icons.Outlined.VolumeUp,onClick={captions=false;tracks=C.TRACK_TYPE_AUDIO});EzButton("Subtitles",Icons.Outlined.Subtitles,onClick={captions=false;tracks=C.TRACK_TYPE_TEXT});EzButton("Speech captions",onClick={captions=false;speechSetup=true})}
-        Text("English subtitles are detected from your stream and provider automatically.",color=Muted,fontSize=12.sp)
+        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){EzButton("Audio",Icons.Outlined.VolumeUp,onClick={captions=false;tracks=C.TRACK_TYPE_AUDIO});EzButton("Subtitles",Icons.Outlined.Subtitles,onClick={captions=false;tracks=C.TRACK_TYPE_TEXT});EzButton(if(a.speechEnabled() && SpeechModel.installed(a))"Live captions: On" else "Live captions: Off",Icons.Outlined.ClosedCaption,onClick={captions=false;speechSetup=true})}
+        Text("English subtitles are detected from your stream and provider automatically. Live captions write English subtitles from the audio when a program has none.",color=Muted,fontSize=12.sp,lineHeight=17.sp)
         a.speech?.let {engine->val speechStatus by engine.status.collectAsState();Text(speechStatus,color=Muted,fontSize=11.sp)}
     }
     tracks?.let {type->TrackDialog(p,type,onAdd={tracks=null;subtitleSources=true},onSelect={if(type==C.TRACK_TYPE_TEXT)a.manualSubtitles()},onAutomatic={a.automaticSubtitles()},onDismiss={tracks=null})}

@@ -14,7 +14,7 @@ import androidx.media3.session.MediaSession
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 object Playback {
     fun create(context: Context,c: Channel,afr: Boolean,muted: Boolean=false,subtitleLanguage: String="en",autoSubtitles: Boolean=true,speech:SpeechCaptions?=null): ExoPlayer {
-        val http=DefaultHttpDataSource.Factory().setUserAgent("EzanoTV/0.3").setConnectTimeoutMs(10000).setReadTimeoutMs(15000).setAllowCrossProtocolRedirects(false).setDefaultRequestProperties(c.headers)
+        val http=DefaultHttpDataSource.Factory().setUserAgent("EzanoTV/0.4").setConnectTimeoutMs(10000).setReadTimeoutMs(15000).setAllowCrossProtocolRedirects(true).setDefaultRequestProperties(c.headers)
         val source=DefaultMediaSourceFactory(DefaultDataSource.Factory(context,http))
         val renderers=object:DefaultRenderersFactory(context){
             override fun buildAudioSink(context:Context,enableFloatOutput:Boolean,enableAudioTrackPlaybackParams:Boolean):androidx.media3.exoplayer.audio.AudioSink? {

@@ -10,6 +10,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import java.security.SecureRandom
+import javax.crypto.spec.SecretKeySpec
 import java.io.File
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -21,6 +25,8 @@ import java.util.zip.GZIPOutputStream
 import kotlinx.coroutines.channels.Channel as SaveChannel
 import kotlinx.coroutines.sync.withLock
 
+private val KEY_MAGIC="EZK1".toByteArray(Charsets.US_ASCII)
+
 class EzanoApp: Application() {
     lateinit var store: Store
     override fun onCreate() { super.onCreate(); store=Store(this) }
@@ -28,7 +34,13 @@ class EzanoApp: Application() {
 class Store(private val context: Context) {
     val events = EventSearchIndex(context)
     val state = MutableStateFlow(Library())
+    /** Settings, playlists, favorites and progress are open; the interface can be shown. */
     val ready = MutableStateFlow(false)
+    /** Channels, movies and shows are open. Until then screens show a loading state, never an empty library. */
+    val catalogReady = MutableStateFlow(false)
+    val guideReady = MutableStateFlow(false)
+    /** The previous launch's Home shelves, shown instantly while the catalog opens. */
+    val home = MutableStateFlow(HomeSnapshot())
     val error = MutableStateFlow("")
     val busy = MutableStateFlow(false)
     val progress = MutableStateFlow("")
@@ -41,18 +53,34 @@ class Store(private val context: Context) {
     private val diskLock=kotlinx.coroutines.sync.Mutex()
     private val saves=SaveChannel<Unit>(SaveChannel.CONFLATED)
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
-    private val file=AtomicFile(File(context.filesDir,"library.vault"))
+    // 0.3.1 sealed the whole library with the Keystore key, one hardware call per 64 KB frame.
+    // On Fire TV that made every launch and every save take minutes. Sections are now sealed in
+    // software with a random data key, and only that 32-byte key is wrapped by the Keystore.
+    private val legacyFile=AtomicFile(File(context.filesDir,"library.vault"))
+    private val vault=File(context.filesDir,"vault").apply {mkdirs()}
+    private val keyFile=AtomicFile(File(vault,"key.bin"))
+    private val profileFile=AtomicFile(File(vault,"profile.ezv"))
+    private val catalogFile=AtomicFile(File(vault,"catalog.ezv"))
+    private val guideFile=AtomicFile(File(vault,"guide.ezv"))
+    private val homeFile=AtomicFile(File(vault,"home.ezv"))
     val opening = MutableStateFlow(true)
-    val slowOpening = MutableStateFlow(false)
+    /** Shown under the startup spinner, e.g. the one-time upgrade progress. Never asks to close the app. */
+    val openingStatus = MutableStateFlow("")
     private val loadRunning=java.util.concurrent.atomic.AtomicBoolean(false)
     @Volatile private var loadFailed=false
-    private var needsMigration=false
     private var savedRevision=-1L
+    private var savedChannels: List<Channel>?=null
+    private var savedPrograms: List<Program>?=null
+    private var savedHome: HomeSnapshot?=null
+    private val keyLock=Any()
+    @Volatile private var dataKey: SecretKey?=null
     init {
         scope.launch {
             var indexed: List<Program>? = null
-            state.map {it.programs}.distinctUntilChanged {old,new->old===new}.collectLatest { programs ->
-                if(programs !== indexed) {
+            combine(state.map {it.programs}.distinctUntilChanged {old,new->old===new},guideReady) {programs,loaded->programs to loaded}.collectLatest {(programs,loaded) ->
+                // Event search is optional: index after startup has settled, and skip unchanged guides.
+                if(loaded && programs !== indexed) {
+                    delay(20000)
                     try { events.prepare(programs); indexed=programs }
                     catch(e: CancellationException) { throw e }
                     catch(_:Exception) { /* The cache is rebuildable; explicit search can retry. */ }
@@ -69,23 +97,77 @@ class Store(private val context: Context) {
             }
         }
     }
+    private fun AtomicFile.present()=baseFile.exists() || File(baseFile.path+".bak").exists()
+    suspend fun awaitCatalog() {catalogReady.first {it}}
+    suspend fun awaitLibrary() {catalogReady.first {it};guideReady.first {it}}
     fun retryOpening() {
         if(ready.value || !loadRunning.compareAndSet(false,true))return
-        opening.value=true;slowOpening.value=false;error.value=""
+        opening.value=true;openingStatus.value="";error.value=""
         scope.launch {
-            val notice=launch {delay(15000);if(opening.value)slowOpening.value=true}
+            var split=false
             try {
-                val saved=diskLock.withLock {
-                    if(file.baseFile.exists() || File(file.baseFile.path+".bak").exists())readSaved() else Library()
+                diskLock.withLock {
+                    when {
+                        profileFile.present() -> {openProfile();split=true}
+                        legacyFile.present() -> migrateLegacy()
+                        else -> opened(Library(),catalog=true,guide=true)
+                    }
                 }
-                state.value=saved.copy(recordings=saved.recordings.map {if(it.status=="recording")it.copy(status="interrupted",error="The previous recording process was interrupted")else it})
-                loadFailed=false;ready.value=true
-                if(needsMigration || (file.baseFile.exists() && (saved.channels as? CompactCatalog)?.restoredIndex==false))saves.trySend(Unit)
             } catch(e:CancellationException){throw e}
-              catch(_:OutOfMemoryError){loadFailed=true;error.value="Not enough memory to open your saved library. Close other apps and retry. Your saved data has been preserved."}
+              catch(_:OutOfMemoryError){loadFailed=true;error.value="Not enough memory to open your saved library. Retry, or restart the TV. Your saved data has been preserved."}
               catch(_:Exception){loadFailed=true;error.value="Your saved library could not be opened. Retry, or restore an encrypted backup. Your playlists, favorites and progress have been preserved."}
-            finally{notice.cancel();opening.value=false;loadRunning.set(false)}
+            finally{opening.value=false;openingStatus.value="";loadRunning.set(false)}
+            if(split && ready.value) try {openSections()} catch(e:CancellationException){throw e} catch(_:Throwable){
+                synchronized(this@Store) {catalogReady.value=true;guideReady.value=true}
+                error.value="Your saved channels, movies and shows could not be opened. Open Playlists and refresh to download them again."
+            }
         }
+    }
+    private fun opened(saved: Library,catalog: Boolean,guide: Boolean) {
+        synchronized(this) {
+            state.value=saved.copy(revision=state.value.revision+1,recordings=saved.recordings.map {if(it.status=="recording")it.copy(status="interrupted",error="The previous recording process was interrupted")else it})
+            savedRevision=state.value.revision;savedChannels=state.value.channels;savedPrograms=state.value.programs
+            loadFailed=false
+            if(catalog) catalogReady.value=true
+            if(guide) guideReady.value=true
+            ready.value=true
+        }
+    }
+    /** Small: settings, playlists, favorites, progress, recordings. Opens in well under a second. */
+    private fun openProfile() {
+        val key=dataKey(false)
+        val profile=readSection(profileFile,key) {input->GZIPInputStream(input,65536).reader().use {LibraryStreams.read(it)}}
+        home.value=runCatching {if(homeFile.present()) readSection(homeFile,key) {VaultFormat.readHome(java.io.DataInputStream(it))}.also {savedHome=it} else null}.getOrNull()?:HomeSnapshot()
+        opened(profile.copy(channels=emptyList(),programs=emptyList()),catalog=false,guide=false)
+    }
+    /** The catalog and guide open after the interface is visible. Failures keep the files for a later refresh. */
+    private fun openSections() {
+        val key=dataKey(false)
+        val catalog=try {if(catalogFile.present()) readSection(catalogFile,key) {VaultFormat.readCatalog(java.io.DataInputStream(it))} else CompactCatalog.Builder().build()}
+            catch(e:CancellationException){throw e}
+            catch(_:Throwable){error.value="Your saved channels, movies and shows could not be opened. Open Playlists and refresh to download them again.";null}
+        synchronized(this) {
+            val loaded=catalog?:CompactCatalog.Builder().build()
+            state.value=state.value.copy(channels=loaded);savedChannels=loaded
+            catalogReady.value=true
+        }
+        val guide=try {if(guideFile.present()) readSection(guideFile,key) {VaultFormat.readGuide(java.io.DataInputStream(it))} else CompactGuide.Builder().build()}
+            catch(e:CancellationException){throw e}
+            catch(_:Throwable){null}
+        synchronized(this) {
+            val loaded=guide?:CompactGuide.Builder().build()
+            state.value=state.value.copy(programs=loaded);savedPrograms=loaded
+            guideReady.value=true
+        }
+    }
+    /** One-time upgrade from the single 0.3.x vault. It is slow on some TVs, so progress stays visible. */
+    private fun migrateLegacy() {
+        openingStatus.value="Speeding up your library · one-time upgrade"
+        val saved=readLegacy()
+        opened(saved,catalog=true,guide=true)
+        synchronized(this) {savedRevision=-1;savedChannels=null;savedPrograms=null}
+        openingStatus.value="Saving the faster library…"
+        if(persist()) {legacyFile.delete();File(context.filesDir,"library.vault.bak").delete()}
     }
     private fun key(create:Boolean=true):SecretKey {
         val ks=KeyStore.getInstance("AndroidKeyStore").apply {load(null)}
@@ -93,27 +175,63 @@ class Store(private val context: Context) {
         check(create){"Saved library key is unavailable"}
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore").apply {init(KeyGenParameterSpec.Builder("ezano-library",KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())}.generateKey()
     }
+    private fun dataKey(create: Boolean): SecretKey {
+        dataKey?.let {return it}
+        synchronized(keyLock) {
+            dataKey?.let {return it}
+            val result=if(keyFile.present()) {
+                val sealed=keyFile.readFully()
+                require(sealed.size>16 && sealed.copyOfRange(0,4).contentEquals(KEY_MAGIC)) {"Invalid library key"}
+                val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key(false),GCMParameterSpec(128,sealed.copyOfRange(4,16)))
+                SecretKeySpec(c.doFinal(sealed.copyOfRange(16,sealed.size)),"AES")
+            } else {
+                check(create) {"Saved library key is unavailable"}
+                val raw=ByteArray(32).also {SecureRandom().nextBytes(it)}
+                val c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,key())
+                val sealed=KEY_MAGIC+c.iv+c.doFinal(raw)
+                var out: java.io.FileOutputStream?=null
+                try {out=keyFile.startWrite();out.write(sealed);keyFile.finishWrite(out)} catch(e:Exception) {keyFile.failWrite(out);throw e}
+                SecretKeySpec(raw,"AES")
+            }
+            dataKey=result
+            return result
+        }
+    }
+    private fun <T> readSection(file: AtomicFile,key: SecretKey,body: (java.io.InputStream)->T): T =
+        file.openRead().buffered(65536).use {raw->ChunkedVault.input(raw,key,ChunkedVault.DATA_KEY_FRAMES).use {frames->body(frames.buffered(65536))}}
+    private fun writeSection(file: AtomicFile,key: SecretKey,body: (java.io.OutputStream)->Unit) {
+        var out: java.io.FileOutputStream?=null
+        try {
+            out=file.startWrite()
+            val keepOpen=object:java.io.FilterOutputStream(out) {
+                override fun write(bytes: ByteArray,offset: Int,length: Int){this.out.write(bytes,offset,length)}
+                override fun close(){flush()}
+            }
+            ChunkedVault.output(keepOpen,key,ChunkedVault.DATA_KEY_FRAMES).buffered(65536).use(body)
+            file.finishWrite(out)
+        } catch(e:Exception) {file.failWrite(out);throw e}
+    }
     private fun decrypt(b: ByteArray): String { val c=Cipher.getInstance("AES/GCM/NoPadding"); c.init(Cipher.DECRYPT_MODE,key(false),GCMParameterSpec(128,b.copyOfRange(0,12))); return String(c.doFinal(b.copyOfRange(12,b.size))) }
-    private fun readSaved(): Library {
-        val deadline=android.os.SystemClock.elapsedRealtime()+90000L
-        fun checkDeadline(){check(android.os.SystemClock.elapsedRealtime()<deadline){"Saved library read timed out"}}
-        fun bounded(raw:java.io.InputStream)=object:java.io.FilterInputStream(raw){
-            override fun read():Int {checkDeadline();return super.read()}
-            override fun read(bytes:ByteArray,offset:Int,length:Int):Int {checkDeadline();return this.`in`.read(bytes,offset,length)}
+    private fun readLegacy(): Library {
+        val total=legacyFile.baseFile.length().coerceAtLeast(1)
+        var read=0L;var shown=-1
+        fun counted(raw:java.io.InputStream)=object:java.io.FilterInputStream(raw){
+            override fun read():Int=super.read().also {if(it>=0) advance(1)}
+            override fun read(bytes:ByteArray,offset:Int,length:Int):Int=this.`in`.read(bytes,offset,length).also {if(it>0) advance(it)}
+            fun advance(n:Int){read+=n;val percent=(read*100/total).toInt().coerceIn(0,99);if(percent!=shown){shown=percent;openingStatus.value="Speeding up your library · one-time upgrade · $percent%"}}
         }.buffered(65536)
-        return file.openRead().use {raw->
-            bounded(raw).use {input->
+        return legacyFile.openRead().use {raw->
+            counted(raw).use {input->
                 input.mark(4);val header=ByteArray(4);java.io.DataInputStream(input).readFully(header);input.reset()
                 when(String(header,Charsets.US_ASCII)){
-                    "EZV3"->{needsMigration=false;readFramed(input)}
+                    "EZV3"->readFramed(input)
                     "EZV2"->{
-                        needsMigration=true
                         // Authenticate old GCM separately from inflating catalog/guide data.
                         // The staging file is encrypted with bounded frames; no plaintext is left on disk.
                         val staged=File.createTempFile("vault-migration-",".encrypted",context.cacheDir)
-                        try{stageLegacy(input,staged);checkDeadline();bounded(staged.inputStream()).use {readFramed(it)}}finally{staged.delete()}
+                        try{stageLegacy(input,staged);staged.inputStream().buffered(65536).use {readFramed(it)}}finally{staged.delete()}
                     }
-                    else->{needsMigration=true;LibraryStreams.read(decrypt(input.readBytes()).reader())}
+                    else->LibraryStreams.read(decrypt(input.readBytes()).reader())
                 }
             }
         }
@@ -134,29 +252,44 @@ class Store(private val context: Context) {
         state.value=change(previous).copy(revision=previous.revision+1)
         saves.trySend(Unit)
     }
-    // Disk work never holds the lock used by UI updates. Compression precedes encryption.
-    private fun persist(snapshot: Library): Boolean { var out: java.io.FileOutputStream?=null
+    fun saveHome(snapshot: HomeSnapshot) {if(snapshot!=home.value){home.value=snapshot;saves.trySend(Unit)}}
+    // Disk work never holds the lock used by UI updates. Only changed sections are rewritten:
+    // a favorite or watch position saves a few kilobytes, not the whole catalog and guide.
+    private fun persist(latest: Library?=null): Boolean {
+        // Sections still opening are never written: read the snapshot and flags together.
+        val (snapshot,catalogOpen,guideOpen)=synchronized(this) {Triple(latest?:state.value,catalogReady.value,guideReady.value)}
         if(loadFailed || !ready.value) return false
-        if(savedRevision==snapshot.revision) return true
         try {
-            out=file.startWrite()
-            val keepOpen=object:java.io.FilterOutputStream(out) {
-                override fun write(bytes: ByteArray,offset: Int,length: Int){this.out.write(bytes,offset,length)}
-                override fun close(){flush()}
+            val key=dataKey(true)
+            if(catalogOpen && snapshot.channels !== savedChannels) {
+                val catalog=VaultFormat.asCatalog(snapshot.channels)
+                writeSection(catalogFile,key) {out->java.io.DataOutputStream(out).let {VaultFormat.writeCatalog(it,catalog);it.flush()}}
+                savedChannels=snapshot.channels
             }
-            GZIPOutputStream(ChunkedVault.output(keepOpen,key())).writer().use {LibraryStreams.write(snapshot,it)}
-            file.finishWrite(out)
-            savedRevision=snapshot.revision
+            if(guideOpen && snapshot.programs !== savedPrograms) {
+                val guide=VaultFormat.asGuide(snapshot.programs)
+                writeSection(guideFile,key) {out->java.io.DataOutputStream(out).let {VaultFormat.writeGuide(it,guide);it.flush()}}
+                savedPrograms=snapshot.programs
+            }
+            if(savedRevision!=snapshot.revision) {
+                writeSection(profileFile,key) {out->GZIPOutputStream(out,65536).let {zip->val writer=zip.writer();LibraryStreams.write(snapshot.copy(channels=emptyList(),programs=emptyList()),writer);writer.flush();zip.finish()}}
+                savedRevision=snapshot.revision
+            }
+            val shelves=home.value
+            if(shelves!==savedHome && !shelves.isEmpty) {
+                writeSection(homeFile,key) {out->java.io.DataOutputStream(out).let {VaultFormat.writeHome(it,shelves);it.flush()}}
+                savedHome=shelves
+            }
             return true
-        } catch(_:Exception) {file.failWrite(out);error.value="Your library could not be saved. Free device storage, then refresh to retry.";return false}
+        } catch(_:Exception) {error.value="Your library could not be saved. Free device storage, then refresh to retry.";return false}
     }
-    suspend fun flush(): Boolean = withContext(Dispatchers.IO) {diskLock.withLock {persist(state.value)}}
-    fun restore(raw: String) { check(!opening.value){"Wait for the current saved-library read to finish"}; val restored=LibraryStreams.read(raw.reader());synchronized(this){state.value=restored.copy(revision=state.value.revision+1);loadFailed=false;ready.value=true;error.value=""};saves.trySend(Unit) }
+    suspend fun flush(): Boolean = withContext(Dispatchers.IO) {diskLock.withLock {persist()}}
+    fun restore(raw: String) { check(!opening.value){"Wait for the current saved-library read to finish"}; val restored=LibraryStreams.read(raw.reader());synchronized(this){state.value=restored.copy(revision=state.value.revision+1);savedRevision=-1;savedChannels=null;savedPrograms=null;loadFailed=false;error.value="";catalogReady.value=true;guideReady.value=true;ready.value=true};saves.trySend(Unit) }
     private fun guideDue(p: Provider): Boolean = GuideRefreshPolicy.due(p.enabled,guideSchedule.getBoolean("blocked:${p.id}",false),
         guideSchedule.getLong("attempt:${p.id}",state.value.lastGuideSync),0L,state.value.prefs.guideHours,System.currentTimeMillis())
     // Automatic work NEVER imports a catalog. A failed guide waits for a manual retry,
     // including after process death; it cannot repeatedly rebuild the visible library.
-    fun shouldRefresh(): Boolean = ready.value && !loadFailed && !busy.value && !guideBusy.value &&
+    fun shouldRefresh(): Boolean = ready.value && catalogReady.value && guideReady.value && !loadFailed && !busy.value && !guideBusy.value &&
         state.value.channels.isNotEmpty() && state.value.providers.any(::guideDue)
     suspend fun refreshGuideAutomatically() { if(shouldRefresh()) submitGuide(null,true).await() }
     suspend fun refreshGuide(provider: Provider? = null): Boolean = submitGuide(provider?.let(::listOf),false).await()
@@ -170,10 +303,12 @@ class Store(private val context: Context) {
     // Imports belong to the application, so closing a dialog/activity cannot cancel a save.
     suspend fun refresh(provider: Provider? = null): Boolean = scope.async {refreshLibrary(provider)}.await()
     private suspend fun refreshLibrary(provider: Provider?) = withContext(Dispatchers.IO) {
-        if(!ready.value || loadFailed) {
-            error.value=if(loadFailed) "The saved library needs recovery. Restore your encrypted backup before refreshing." else "Your saved library is still opening. Try again shortly."
+        if(loadFailed) {
+            error.value="The saved library needs recovery. Restore your encrypted backup before refreshing."
             return@withContext false
         }
+        if(!ready.value) {error.value="Your saved library is still opening. Try again shortly.";return@withContext false}
+        progress.value="Opening your saved library…";awaitLibrary()
         if(!refreshLock.tryLock()) return@withContext false
         busy.value=true;error.value="";var connected=false
         val guideProviders=mutableListOf<Provider>()
@@ -208,6 +343,7 @@ class Store(private val context: Context) {
 
     private suspend fun updateGuide(requested: List<Provider>?,automatic: Boolean): Boolean {
         if(!ready.value || loadFailed) return false
+        awaitLibrary()
         val providers=requested?:state.value.providers.filter {it.enabled}
         var completed=false
         for(p in providers) {
@@ -251,7 +387,7 @@ class Store(private val context: Context) {
         }
         return completed
     }
-    fun removeProvider(id: String) { scope.launch { refreshLock.withLock {
+    fun removeProvider(id: String) { scope.launch { awaitLibrary(); refreshLock.withLock {
         val snapshot=state.value
         val canceled=snapshot.recordings.filter {it.channel.provider==id && it.status in listOf("scheduled","recording")}
         canceled.forEach {Scheduler.cancel(context,it)}

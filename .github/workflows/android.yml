@@ -1,0 +1,111 @@
+name: Android build
+
+on:
+  push:
+    branches: ["claude/**", "main"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.EZANO_KEYSTORE_BASE64 != '' && secrets.EZANO_STORE_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.EZANO_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.EZANO_STORE_PASSWORD }}
+        run: |
+          if [ "$HAS_SIGNING_KEY" = "true" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+            echo "::add-mask::$STORE_PASSWORD"
+            echo "EZANO_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+          else
+            # Test builds only: a throwaway key so the APK installs. Releases require the repository secrets.
+            echo "::warning::EZANO_KEYSTORE_BASE64 / EZANO_STORE_PASSWORD secrets are not set; signing with a throwaway test key."
+            password="$(openssl rand -hex 16)"
+            echo "::add-mask::$password"
+            keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/release.jks" -alias ezano -keyalg RSA -keysize 2048 \
+              -validity 30 -dname "CN=Ezano TV test build" -storepass "$password" -keypass "$password"
+            echo "EZANO_STORE_PASSWORD=$password" >> "$GITHUB_ENV"
+          fi
+          echo "EZANO_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Unit tests and release build
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest assembleRelease
+
+      - name: Package
+        run: |
+          version="$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)"
+          mkdir -p dist
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk"
+          cp "$apk" dist/Ezano-TV.apk
+          cp "$apk" "dist/Ezano-TV-$version.apk"
+          git archive --format=zip --prefix="ezano-tv/" -o "dist/Ezano-TV-source-$version.zip" HEAD
+          (cd dist && sha256sum *.apk *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ezano-tv-apk
+          path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Require the permanent signing key
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.EZANO_KEYSTORE_BASE64 != '' && secrets.EZANO_STORE_PASSWORD != '' }}
+        run: |
+          if [ "$HAS_SIGNING_KEY" != "true" ]; then
+            echo "::error::Add the EZANO_KEYSTORE_BASE64 and EZANO_STORE_PASSWORD repository secrets so releases can update each other."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ezano-tv-apk
+          path: dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Ezano TV ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: dist/*
+          make_latest: true

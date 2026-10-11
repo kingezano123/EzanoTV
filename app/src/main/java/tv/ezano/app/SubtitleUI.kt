@@ -11,16 +11,31 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.*
 
+/** Free, on-device live captions: one button downloads the English model (once) and switches captions on. */
 @Composable fun SpeechSetup(a:MainActivity,onDismiss:()->Unit){
     var installed by remember {mutableStateOf(SpeechModel.installed(a))};var enabled by remember {mutableStateOf(a.speechEnabled())}
     var busy by remember {mutableStateOf(false)};var status by remember {mutableStateOf("")}
-    Modal("English speech captions",onDismiss){
-        Text("Generate captions from the program audio on this device when English subtitles are missing. Voices, accents and background music affect accuracy; recognition can lag by a few seconds.",color=Muted,fontSize=12.sp)
-        Text("One-time English model download: about 40 MB. Recognition uses extra memory and processing. Audio stays on your TV; no microphone is used.",color=Muted,fontSize=12.sp)
-        if(!installed)EzButton(if(busy)"Downloading…" else "Download English model",primary=true,onClick={if(!busy){busy=true;a.scope.launch {try{withContext(Dispatchers.IO){SpeechModel.install(a){value->a.scope.launch {status=value}}};installed=true}catch(_:Exception){status="Model setup failed. Check your connection and free storage, then retry."}finally{busy=false}}}})
-        if(installed)EzButton(if(enabled)"Turn speech captions off" else "Enable speech fallback",primary=true,onClick={enabled=!enabled;a.setSpeechEnabled(enabled);onDismiss()})
+    fun turnOn(){
+        if(busy)return
+        if(installed){enabled=true;a.setSpeechEnabled(true);onDismiss();return}
+        busy=true
+        a.scope.launch {
+            try{withContext(Dispatchers.IO){SpeechModel.install(a){value->a.scope.launch {status=value}}};installed=true;enabled=true;a.setSpeechEnabled(true);a.message="Live captions are on";onDismiss()}
+            catch(e:CancellationException){throw e}
+            catch(e:Exception){status=e.message?.takeIf {it.length<120}?:"Setup failed. Check your connection and free storage, then retry."}
+            finally{busy=false}
+        }
+    }
+    Modal("Live captions",onDismiss){
+        Text("Ezano listens to the program's audio and writes English captions as people speak — on any channel, movie or show, even when there are no subtitles. It is free and runs entirely on this TV: no microphone, no account, nothing uploaded.",color=Color.White,fontSize=13.sp,lineHeight=19.sp)
+        Text("Captions appear within about a second of speech. Music, crowd noise and strong accents lower accuracy, and speech in other languages is not shown. When the stream has its own subtitles, those are used instead.",color=Muted,fontSize=12.sp,lineHeight=17.sp)
+        if(!installed)Text("First use downloads a 40 MB English speech model (needs 200 MB free).",color=Muted,fontSize=12.sp)
+        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
+            if(enabled && installed)EzButton("Turn live captions off",primary=true,onClick={enabled=false;a.setSpeechEnabled(false);onDismiss()})
+            else EzButton(if(busy)"Setting up…" else if(installed)"Turn live captions on" else "Download & turn on",primary=true,onClick={turnOn()})
+        }
         if(status.isNotBlank())Text(status,color=Color.White,fontSize=12.sp)
-        if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
+        if(busy)LinearProgressIndicator(Modifier.fillMaxWidth(),color=LocalAccent.current)
     }
 }
 

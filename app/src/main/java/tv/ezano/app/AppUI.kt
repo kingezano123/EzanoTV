@@ -91,18 +91,21 @@ import java.time.format.DateTimeFormatter
 }
 
 @Composable private fun StartupRecovery(a: MainActivity) {
-    val opening by a.store.opening.collectAsState();val slow by a.store.slowOpening.collectAsState();val error by a.store.error.collectAsState()
+    val opening by a.store.opening.collectAsState();val status by a.store.openingStatus.collectAsState();val error by a.store.error.collectAsState()
     var restore by remember {mutableStateOf(false)};var passphrase by remember {mutableStateOf("")}
     BackHandler {a.finish()}
     Box(Modifier.fillMaxSize().background(Ink),contentAlignment=Alignment.Center) {
-        Column(Modifier.widthIn(max=560.dp).padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)){
-            if(opening && !slow){CircularProgressIndicator(color=LocalAccent.current);Text("Opening saved library…",color=Color.White)}
-            else{
-                Text(if(opening)"Opening your saved collection" else "Saved library needs attention",color=Color.White,fontSize=21.sp)
-                Text(if(opening)"This is taking longer than usual. Your saved data is being read; you can close Ezano and try again after closing other apps." else error,color=Muted,fontSize=13.sp)
+        Column(Modifier.widthIn(max=560.dp).padding(28.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(16.dp)){
+            Text("EZANO",color=Color.White,fontSize=40.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=3.sp)
+            // Opening always stays on this screen until the library is ready; it never asks to close the app.
+            if(opening || error.isBlank()){
+                CircularProgressIndicator(Modifier.size(30.dp),color=LocalAccent.current,strokeWidth=2.5.dp)
+                Text(status.ifBlank {"Loading your library…"},color=Muted,fontSize=13.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+            } else {
+                Text("Saved library needs attention",color=Color.White,fontSize=21.sp)
+                Text(error,color=Muted,fontSize=13.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
                 Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){
-                    if(!opening){EzButton("Retry",primary=true,onClick={a.store.retryOpening()});EzButton("Restore backup",onClick={restore=true})}
-                    EzButton("Close app",onClick={a.finish()})
+                    EzButton("Retry",primary=true,onClick={a.store.retryOpening()});EzButton("Restore backup",onClick={restore=true})
                 }
             }
         }

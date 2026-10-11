@@ -92,9 +92,13 @@ import java.time.format.DateTimeFormatter
 
 @Composable private fun visibleCatalogState(a: MainActivity, kind: Kind? = null): State<List<Channel>?> {
     val s by a.store.libraryState()
-    return uiPendingListState<Channel>(uiKey(s.channels), s.providers, s.hidden, s.hiddenGroups, s.order, kind) {
+    val loaded by a.store.catalogReady.collectAsState()
+    val visible = uiPendingListState<Channel>(uiKey(s.channels), s.providers, s.hidden, s.hiddenGroups, s.order, kind, loaded) {
         a.store.visible(kind)
     }
+    // While the saved catalog is still opening, screens show "Opening…" rather than an empty library.
+    val opening = remember { mutableStateOf<List<Channel>?>(null) }
+    return if (loaded) visible else opening
 }
 
 @Composable private fun catalogGroups(channels: List<Channel>): List<String> {

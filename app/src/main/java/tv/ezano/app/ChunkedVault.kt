@@ -10,9 +10,12 @@ import javax.crypto.spec.GCMParameterSpec
 /** Authenticate 64 KB frames instead of buffering a whole library in Android's GCM provider. */
 object ChunkedVault {
     private const val CHUNK=65536
-    private val magic="EZV3".toByteArray(Charsets.US_ASCII)
-    private fun aad(identity: ByteArray,index: Long,length: Int)=ByteBuffer.allocate(32).put(magic).put(identity).putLong(index).putInt(length).array()
-    fun output(output: OutputStream,key: SecretKey): OutputStream = object:OutputStream() {
+    /** Library frames sealed directly by the Android Keystore key (0.3.1). */
+    val KEYSTORE_FRAMES="EZV3".toByteArray(Charsets.US_ASCII)
+    /** Frames sealed in software by a data key that the Keystore wraps; one Keystore call per launch. */
+    val DATA_KEY_FRAMES="EZV4".toByteArray(Charsets.US_ASCII)
+    private fun aad(magic: ByteArray,identity: ByteArray,index: Long,length: Int)=ByteBuffer.allocate(32).put(magic).put(identity).putLong(index).putInt(length).array()
+    fun output(output: OutputStream,key: SecretKey,magic: ByteArray=KEYSTORE_FRAMES): OutputStream = object:OutputStream() {
         private val data=DataOutputStream(output)
         private val identity=ByteArray(16).also {SecureRandom().nextBytes(it)}
         private val buffer=ByteArray(CHUNK)
@@ -21,7 +24,7 @@ object ChunkedVault {
         private fun frame(length: Int) {
             val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key)
             require(cipher.iv.size==12)
-            cipher.updateAAD(aad(identity,index++,length))
+            cipher.updateAAD(aad(magic,identity,index++,length))
             val encrypted=cipher.doFinal(buffer,0,length)
             data.writeInt(encrypted.size);data.write(cipher.iv);data.write(encrypted)
         }
@@ -35,7 +38,7 @@ object ChunkedVault {
         // Caller owns the AtomicFile stream and commits only after the terminal tag is written.
         override fun close(){if(!closed){if(count>0)frame(count);frame(0);closed=true;data.flush()}}
     }
-    fun input(input: InputStream,key: SecretKey): InputStream = object:InputStream() {
+    fun input(input: InputStream,key: SecretKey,magic: ByteArray=KEYSTORE_FRAMES): InputStream = object:InputStream() {
         private val data=DataInputStream(input);private val identity=ByteArray(16)
         private var buffer=ByteArray(0);private var pos=0;private var index=0L;private var ended=false
         init {val h=ByteArray(4);data.readFully(h);require(h.contentEquals(magic)){"Unsupported vault"};data.readFully(identity)}
@@ -43,7 +46,7 @@ object ChunkedVault {
             if(ended)return false
             val length=data.readInt();require(length in 16..CHUNK+16){"Invalid vault frame"}
             val iv=ByteArray(12);data.readFully(iv);val encrypted=ByteArray(length);data.readFully(encrypted)
-            val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key,GCMParameterSpec(128,iv));cipher.updateAAD(aad(identity,index++,length-16))
+            val cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.DECRYPT_MODE,key,GCMParameterSpec(128,iv));cipher.updateAAD(aad(magic,identity,index++,length-16))
             buffer=cipher.doFinal(encrypted);pos=0
             if(buffer.isEmpty()){require(data.read()==-1){"Trailing vault data"};ended=true;return false}
             return true
