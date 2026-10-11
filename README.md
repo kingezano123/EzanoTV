@@ -1,19 +1,19 @@
-# Ezano TV 0.3.1
+# Ezano TV 0.4.0
 
-A native Android TV IPTV player with a black, content-first interface, remote navigation, movie/show shelves, and a cable-style live guide. Android 8 or later.
+A native Android TV / Fire TV IPTV player with a black, content-first interface, remote navigation, movie/show shelves, and a cable-style live guide. Android 8 or later.
 
 ## Install and watch
 
-[Download the signed APK](https://github.com/kingezano123/EzanoTV/releases/latest/download/Ezano-TV.apk) · [Release and full Android source archive](https://github.com/kingezano123/EzanoTV/releases/tag/v0.3.1). Install over your existing Ezano app to preserve your library. The existing release signing key is retained. Downloader code 8306366 still points to 0.2.0; use the APK URL above for this update.
+[Download the signed APK](https://github.com/kingezano123/EzanoTV/releases/latest/download/Ezano-TV.apk). 0.4.0 uses a new signing key, so uninstall 0.3.x first. To keep your favorites and progress, back up in 0.3.x (Settings → Back up your library) and restore in 0.4.0. Later updates install over 0.4.0.
 
-Open Playlists → Add playlist and enter your own Xtream Codes or M3U details. Credentials remain encrypted with Android Keystore. No commercial subscriptions, channels, or catalog are bundled.
+Open Playlists → Add playlist and enter your own Xtream Codes or M3U details. Credentials remain encrypted on the device. No commercial subscriptions, channels, or catalog are bundled.
 
 ## This update
 
-- Saved libraries now use bounded authenticated encryption frames and restore the compressed guide directly. Older encrypted libraries migrate automatically. Failed loading preserves the original file and offers Retry or Restore encrypted backup; slow loading shows a status instead of an unexplained spinner. A 76,000-title / 64,000-program fixture reopened in about three seconds on the constrained test emulator. Actual device times vary.
-- Back exits playback, saves progress, releases the player and returns to browsing. The expanded mini-player and picture-in-picture are removed. Show details close when Watch starts.
-- Automatic English subtitle selection recognizes regional English tracks, tries alternative provider caption files when one fails, and can be resumed after manually turning captions off.
-- Optional offline speech captions transcribe decoded program audio when a subtitle track is unavailable. Download and enable the English model explicitly through Audio & subtitles → Speech captions. Model loading is kept out of app startup.
+- **Opens in seconds.** Library sections are encrypted with a software data key that the Android Keystore wraps once per launch, instead of one Keystore operation per 64 KB. Settings, playlists and Home open first; the catalog and guide load behind them. Saves rewrite only the changed section. The loading screen never asks you to close the app; the one-time upgrade from 0.3.x shows its progress.
+- **Famous kids & family titles on Home.** A curated, release-date-checked list (`FeaturedTitles.kt`) of about 160 G/PG films and 70 kids shows is matched against your catalog, newest blockbusters first (Toy Story 5, Minions & Monsters, The Super Mario Galaxy Movie, Zootopia 2…). The best English copy of each title is used; locked, hidden, mature and foreign-language copies are skipped.
+- **Free live captions.** Audio & subtitles → Live captions downloads a 40 MB English model once and writes captions from the program audio on the TV, on any channel, movie or show. They pause when the stream has its own subtitles. Non-English speech is filtered out by recognizer confidence instead of being shown as nonsense.
+- Live streams reconnect automatically; http→https redirects are followed.
 
 ## Interface and library
 
@@ -46,7 +46,9 @@ Favorites, groups, hiding, PIN protection, encrypted backups, reminders, compati
 
 ## Build
 
-Use JDK 17+, Android SDK platform 35 and build tools 35.0.0. Set ANDROID_HOME or an untracked local.properties sdk.dir. Run ./gradlew assembleDebug testDebugUnitTest lintDebug. For a signed optimized release, privately set EZANO_KEYSTORE and EZANO_STORE_PASSWORD (alias ezano), then ./gradlew assembleRelease. Preserve the existing signing key for updates.
+GitHub Actions (`.github/workflows/android.yml`) runs the unit tests and builds the release APK on every push. Pushing a `v*` tag publishes a GitHub release with `Ezano-TV.apk`, using the repository secrets `EZANO_KEYSTORE_BASE64` (base64 of the .jks, alias `ezano`) and `EZANO_STORE_PASSWORD`. Without those secrets, branch builds are signed with a throwaway test key and releases are refused.
+
+Locally: JDK 17+, Android SDK platform 35 and build tools 35.0.0, then `./gradlew assembleDebug testDebugUnitTest`. For a signed release set EZANO_KEYSTORE and EZANO_STORE_PASSWORD, then `./gradlew assembleRelease`. Keep the signing key: updates must be signed with it.
 
 The buildable Android project is the attached Ezano-TV-source-0.3.1.zip. This repository is a release host; GitHub's autogenerated source archives contain its repository files. Signing secrets, SDK paths, caches and fixture media are excluded from the Android source archive.
 

@@ -41,7 +41,7 @@ class VaultFormatTest {
     }
 
     @Test fun homeSnapshotRoundTrip() {
-        val home=HomeSnapshot(listOf(Channel("m:1","p","1","Toy Story 5","u",Kind.MOVIE,logo="https://img.test/ts5.jpg",year="2026")),listOf(Channel("s:1","p","1","Bluey","",Kind.SERIES)))
+        val home=HomeSnapshot(listOf(Channel("m:1","p","1","Toy Story 5","u",Kind.MOVIE,logo="https://img.test/ts5.jpg",year="2026")),listOf(Channel("s:1","p","1","Bluey","",Kind.SERIES)),more=listOf(Channel("m:2","p","2","Up","",Kind.MOVIE)))
         assertEquals(home,opened(sealed {VaultFormat.writeHome(it,home)}) {VaultFormat.readHome(it)})
     }
 

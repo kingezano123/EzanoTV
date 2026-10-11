@@ -99,7 +99,8 @@ internal object VaultFormat {
     /** Last computed Home shelves, shown immediately on the next launch while the catalog opens. */
     fun writeHome(output: DataOutputStream, home: HomeSnapshot) {
         output.writeInt(HOME)
-        val json=JSONObject().put("movies",JSONArray(home.movies.map {with(Json) {it.json()}})).put("shows",JSONArray(home.shows.map {with(Json) {it.json()}}))
+        fun list(items: List<Channel>)=JSONArray(items.map {with(Json) {it.json()}})
+        val json=JSONObject().put("popular",list(home.popular)).put("shows",list(home.shows)).put("classics",list(home.classics)).put("more",list(home.more))
         output.text(json.toString())
     }
 
@@ -107,10 +108,14 @@ internal object VaultFormat {
         require(input.readInt()==HOME) {"Unsupported Home snapshot"}
         val json=JSONObject(input.text())
         fun list(key: String)=Json.array(json.optJSONArray(key)).mapNotNull {it as? JSONObject}.map(Json::channel)
-        return HomeSnapshot(list("movies"),list("shows"))
+        return HomeSnapshot(list("popular"),list("shows"),list("classics"),list("more"))
     }
 }
 
-data class HomeSnapshot(val movies: List<Channel> = emptyList(), val shows: List<Channel> = emptyList()) {
-    val isEmpty get() = movies.isEmpty() && shows.isEmpty()
+/** Home shelves; also saved so the next launch shows them instantly while the catalog opens. */
+data class HomeSnapshot(val popular: List<Channel> = emptyList(), val shows: List<Channel> = emptyList(),
+    val classics: List<Channel> = emptyList(), val more: List<Channel> = emptyList()) {
+    val isEmpty get() = popular.isEmpty() && shows.isEmpty() && classics.isEmpty() && more.isEmpty()
+    val hero get() = popular.firstOrNull() ?: classics.firstOrNull() ?: shows.firstOrNull() ?: more.firstOrNull()
+    fun filter(keep: (Channel) -> Boolean) = HomeSnapshot(popular.filter(keep), shows.filter(keep), classics.filter(keep), more.filter(keep))
 }

@@ -73,24 +73,32 @@ object WatchHistory {
 
 @Composable fun CinemaHome(a: MainActivity,onDetails: (Channel)->Unit,onConnect: ()->Unit) {
     val s by a.store.libraryState()
-    var selection by remember {mutableStateOf(HomeRecommendations.Selection())}
+    val catalogOpen by a.store.catalogReady.collectAsState()
+    val cached by a.store.home.collectAsState()
+    var computed by remember {mutableStateOf<HomeSnapshot?>(null)}
     var resume by remember {mutableStateOf<List<Channel>>(emptyList(),referentialEqualityPolicy())}
-    LaunchedEffect(uiKey(s.channels),s.providers,s.hidden,s.hiddenGroups,s.locked,s.prefs.lockedSections) {
-        selection=withContext(Dispatchers.Default) {HomeRecommendations.selectIndexed(a.store.visible(),allowed={it.id !in s.locked && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections})}
+    LaunchedEffect(uiKey(s.channels),s.providers,s.hidden,s.hiddenGroups,s.locked,s.prefs.lockedSections,catalogOpen) {
+        if(!catalogOpen) return@LaunchedEffect
+        val shelves=withContext(Dispatchers.Default) {HomeRecommendations.featured(a.store.visible(),allowed={it.id !in s.locked && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections})}
+        computed=shelves
+        a.store.saveHome(shelves)
     }
     LaunchedEffect(uiKey(s.channels),s.recent,s.positions,s.providers,s.hidden,s.hiddenGroups,s.locked,s.prefs.lockedSections) {resume=withContext(Dispatchers.Default) {WatchHistory.resume(s)}}
-    val chosen=selection.mixed.firstOrNull() ?: resume.firstOrNull()
+    // Until the catalog opens, last launch's shelves appear instantly (still honoring current locks).
+    val shelves=computed ?: remember(cached,s.locked,s.hidden,s.prefs.lockedSections) {cached.filter {it.id !in s.locked && it.id !in s.hidden && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections}}
+    val chosen=shelves.hero ?: resume.firstOrNull()
     var hero by remember(chosen?.id) {mutableStateOf(chosen)}
-    LaunchedEffect(chosen?.id) {val c=chosen?:return@LaunchedEffect;val p=s.providers.firstOrNull {it.id==c.provider}?:return@LaunchedEffect;if(c.kind==Kind.MOVIE) runCatching {withContext(Dispatchers.IO){Sources.details(p,c)}}.onSuccess {hero=it.takeIf {value->if(resume.any {it.id==c.id}) WatchHistory.allowed(value,s) else HomeRecommendations.isEligible(value)}}}
+    LaunchedEffect(chosen?.id) {val c=chosen?:return@LaunchedEffect;val p=s.providers.firstOrNull {it.id==c.provider}?:return@LaunchedEffect;if(c.kind==Kind.MOVIE) runCatching {withContext(Dispatchers.IO){Sources.details(p,c)}}.onSuccess {hero=it.takeIf {value->if(resume.any {it.id==c.id}) WatchHistory.allowed(value,s) else HomeRecommendations.isEligible(value) || HomeRecommendations.isFeatured(value)}}}
     LazyColumn(Modifier.fillMaxSize().background(Ink).padding(top=66.dp),contentPadding=PaddingValues(bottom=28.dp)) {
         hero?.let {c->item {
-            Box(Modifier.fillMaxWidth().height(268.dp)) {
+            Box(Modifier.fillMaxWidth().height(300.dp)) {
                 Art(c.backdrop.ifBlank {c.logo},Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(.96f),Color.Black.copy(.65f),Color.Transparent))))
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(.10f),.65f to Color.Transparent,1f to Color.Black)))
-                Column(Modifier.align(Alignment.CenterStart).padding(start=38.dp).width(420.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.align(Alignment.CenterStart).padding(start=38.dp).width(440.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    if(HomeRecommendations.isFeatured(c)) Text("FEATURED FOR KIDS & FAMILY",color=LocalAccent.current,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
                     Text(if(c.kind==Kind.EPISODE) c.group else HomeRecommendations.title(c),fontSize=33.sp,lineHeight=37.sp,fontWeight=FontWeight.Bold,color=Color.White,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    Text(listOf(c.year,c.certification,if(c.kind==Kind.MOVIE) "Movie" else "Series").filter {it.isNotBlank()}.joinToString("   ·   "),color=Color(0xFFCCCCCC),fontSize=11.sp)
+                    Text(listOf(c.year.take(4),c.certification,if(c.kind==Kind.MOVIE) "Movie" else "Series").filter {it.isNotBlank()}.joinToString("   ·   "),color=Color(0xFFCCCCCC),fontSize=11.sp)
                     if(c.description.isNotBlank()) Text(c.description,color=Color(0xFFDDDDDD),fontSize=12.sp,lineHeight=18.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
                         EzButton(if((s.positions[c.id]?:0)>0) "Resume" else "Play",Icons.Outlined.PlayArrow,primary=true,onClick={if(c.kind==Kind.SERIES) onDetails(c) else a.play(c)})
@@ -99,20 +107,26 @@ object WatchHistory {
                 }
             }
         }}
-        item {
-            Column(Modifier.padding(top=if(hero==null) 24.dp else 0.dp,bottom=8.dp)) {
-                Text("Continue Watching",fontSize=18.sp,fontWeight=FontWeight.SemiBold,color=Color.White,modifier=Modifier.padding(horizontal=36.dp,vertical=10.dp))
-                if(resume.isEmpty()) Text("Movies and episodes you start will appear here.",color=Muted,fontSize=11.sp,modifier=Modifier.padding(horizontal=36.dp,vertical=14.dp))
-                else LazyRow(contentPadding=PaddingValues(horizontal=33.dp),horizontalArrangement=Arrangement.spacedBy(11.dp)) {items(resume,key={it.id}) {c->Poster(c,favorite=c.id in s.favorites,onClick={a.play(c)})}}
+        if(resume.isNotEmpty()) item {
+            Column(Modifier.padding(top=if(hero==null) 24.dp else 4.dp,bottom=8.dp)) {
+                Text("Continue Watching",fontSize=17.sp,fontWeight=FontWeight.SemiBold,color=Color.White,modifier=Modifier.padding(horizontal=28.dp,vertical=10.dp))
+                LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {items(resume,key={it.id}) {c->Poster(c,favorite=c.id in s.favorites,onClick={a.play(c)})}}
             }
         }
-        if(selection.mixed.isNotEmpty()) item {ContentRow("Recommended for you",selection.mixed.take(24),s.favorites,onDetails)}
-        if(selection.movies.isNotEmpty()) item {ContentRow("Movies to watch",selection.movies,s.favorites,onDetails)}
-        if(selection.shows.isNotEmpty()) item {ContentRow("Shows to discover",selection.shows,s.favorites,onDetails)}
-        if(selection.mixed.isEmpty()) item {
+        if(shelves.popular.isNotEmpty()) item {ContentRow(if(shelves.classics.isEmpty()) "Family picks" else "Popular kids movies",shelves.popular,s.favorites,onDetails,portrait=true)}
+        if(shelves.shows.isNotEmpty()) item {ContentRow("Kids & family shows",shelves.shows,s.favorites,onDetails,portrait=true)}
+        if(shelves.classics.isNotEmpty()) item {ContentRow("Family classics",shelves.classics,s.favorites,onDetails,portrait=true)}
+        if(shelves.more.isNotEmpty()) item {ContentRow("More family movies & shows",shelves.more,s.favorites,onDetails,portrait=true)}
+        if(shelves.isEmpty && !catalogOpen) item {
+            Row(Modifier.padding(horizontal=36.dp,vertical=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(20.dp),color=LocalAccent.current,strokeWidth=2.dp);Text("Loading your movies and shows…",color=Muted,fontSize=12.sp)
+            }
+        }
+        if(shelves.isEmpty && catalogOpen) item {
             Column(Modifier.padding(horizontal=36.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("Your collection",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.SemiBold)
                 if(s.providers.isNotEmpty()) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {EzButton("Movies",onClick={a.page="Movies"});EzButton("Shows",onClick={a.page="Series"})}
+                else EzButton("Add a playlist",primary=true,onClick=onConnect)
                 Text(if(s.providers.isEmpty()) "Your movies and shows appear here once a playlist is available." else "Browse your movies and shows to find your next watch.",color=Muted,fontSize=11.sp)
             }
         }

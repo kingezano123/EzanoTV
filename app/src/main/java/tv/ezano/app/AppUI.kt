@@ -57,9 +57,9 @@ import java.time.format.DateTimeFormatter
         if(exit) Modal("Leave Ezano TV?",{exit=false}) { Text("Your playlists and watch progress are saved.",color=Muted); Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { EzButton("Keep watching",primary=true,onClick={exit=false}); EzButton("Exit",onClick={a.finish()}) } }
     } }
 }
-@Composable fun ContentRow(title: String,items: List<Channel>,favorites: Set<String>,onDetails: (Channel)->Unit,subtitle: String="") {
+@Composable fun ContentRow(title: String,items: List<Channel>,favorites: Set<String>,onDetails: (Channel)->Unit,subtitle: String="",portrait: Boolean=false) {
     if(items.isEmpty()) return
-    Column(Modifier.padding(top=13.dp,bottom=9.dp)) { Row(Modifier.padding(start=28.dp,end=28.dp,bottom=10.dp),verticalAlignment=Alignment.CenterVertically) { Text(title,fontSize=17.sp,color=Color.White,fontWeight=FontWeight.SemiBold); Spacer(Modifier.weight(1f)); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,fontSize=10.sp) }; LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) { items(items,key={it.id}) {c->Poster(c,favorite=c.id in favorites,onClick={onDetails(c)})} } }
+    Column(Modifier.padding(top=10.dp,bottom=6.dp)) { Row(Modifier.padding(start=28.dp,end=28.dp,bottom=8.dp),verticalAlignment=Alignment.CenterVertically) { Text(title,fontSize=17.sp,color=Color.White,fontWeight=FontWeight.SemiBold); Spacer(Modifier.weight(1f)); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,fontSize=10.sp) }; LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) { items(items,key={it.id}) {c->Poster(c,favorite=c.id in favorites,portrait=portrait,onClick={onDetails(c)})} } }
 }
 @Composable fun EmptyState(title: String,body: String,onConnect: ()->Unit) { Column(Modifier.fillMaxWidth().padding(vertical=40.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)) { Icon(Icons.Outlined.Tv,null,Modifier.size(43.dp),tint=LocalAccent.current); Text(title,fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=Color.White); Text(body,fontSize=12.sp,color=Muted); EzButton("Manage playlists",primary=true,onClick=onConnect) } }
 @Composable fun SavedScreen(a: MainActivity,onDetails: (Channel)->Unit) {
