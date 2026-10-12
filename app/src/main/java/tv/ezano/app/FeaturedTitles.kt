@@ -299,28 +299,14 @@ object FeaturedTitles {
     )
 
     // ---------------------------------------------------------------------------------------------
-    // Indexes: normalized key -> (rank, entry) sorted by rank. Built once, O(1) lookups.
+    // Indexes: normalized key -> ranks, built once, O(1) lookups (see TitleMatcher).
     // ---------------------------------------------------------------------------------------------
 
-    private val movieIndex: HashMap<String, List<Pair<Int, Entry>>> by lazy { buildIndex(movies) }
-    private val showIndex: HashMap<String, List<Pair<Int, Entry>>> by lazy { buildIndex(shows) }
-
-    private fun buildIndex(list: List<Entry>): HashMap<String, List<Pair<Int, Entry>>> {
-        val tmp = HashMap<String, MutableList<Pair<Int, Entry>>>(list.size * 4)
-        list.forEachIndexed { rank, entry ->
-            val keys = LinkedHashSet<String>()
-            for (n in listOf(entry.title) + entry.aliases) {
-                val k = normalize(n)
-                if (k.isEmpty()) continue
-                keys.add(k)
-                // Providers frequently omit a leading article; index that variant too.
-                if (k.startsWith("the ") && k.length > 4) keys.add(k.substring(4))
-            }
-            for (k in keys) tmp.getOrPut(k) { ArrayList(2) }.add(rank to entry)
-        }
-        val out = HashMap<String, List<Pair<Int, Entry>>>(tmp.size * 2)
-        for ((k, v) in tmp) out[k] = v.sortedBy { it.first }
-        return out
+    private val movieMatcher: TitleMatcher by lazy {
+        TitleMatcher(movies.map { TitleMatcher.Candidate(listOf(it.title) + it.aliases, it.year) }, TitleMatcher.YearRule.NEAR)
+    }
+    private val showMatcher: TitleMatcher by lazy {
+        TitleMatcher(shows.map { TitleMatcher.Candidate(listOf(it.title) + it.aliases, it.year) }, TitleMatcher.YearRule.NOT_BEFORE)
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -348,28 +334,14 @@ object FeaturedTitles {
     }
 
     /** 0-based rank of the best matching movie entry, or -1. `year` is provider metadata (may be blank or like "2026-06-19"). */
-    fun movieRank(name: String, year: String = ""): Int {
-        val candidates = movieIndex[normalize(name)] ?: return -1
-        val py = providerYear(name, year)
-        for ((rank, entry) in candidates) {
-            if (py == null || kotlin.math.abs(py - entry.year) <= 1) return rank
-        }
-        return -1
-    }
+    fun movieRank(name: String, year: String = ""): Int = movieMatcher.rank(name, year)
 
     /**
      * 0-based rank of the best matching show entry, or -1.
      * Series metadata years are often the latest season / upload year rather than the first-air year,
      * so a show only fails the year check when the provider year is before the show started.
      */
-    fun showRank(name: String, year: String = ""): Int {
-        val candidates = showIndex[normalize(name)] ?: return -1
-        val py = providerYear(name, year)
-        for ((rank, entry) in candidates) {
-            if (py == null || py >= entry.year - 1) return rank
-        }
-        return -1
-    }
+    fun showRank(name: String, year: String = ""): Int = showMatcher.rank(name, year)
 
     /** Convenience dispatch by catalog [Kind]: movies and series are ranked, everything else is -1. */
     fun rank(kind: Kind, name: String, year: String = ""): Int = when (kind) {
@@ -382,7 +354,8 @@ object FeaturedTitles {
     // Internals
     // ---------------------------------------------------------------------------------------------
 
-    private fun providerYear(name: String, year: String): Int? {
+    /** Year from provider metadata (blank or like "2026-06-19") when present, else the year found in the title. */
+    internal fun providerYear(name: String, year: String): Int? {
         if (year.isNotBlank()) {
             YEAR.find(year)?.let { return it.value.toInt() }
         }
@@ -514,5 +487,62 @@ object FeaturedTitles {
             sb.append(t)
         }
         return sb.toString()
+    }
+}
+
+/**
+ * Ranked title index shared by [FeaturedTitles] and [PopularTitles]: rank = position in the curated list.
+ * Every name (title + aliases) is keyed by [FeaturedTitles.normalize], plus a variant without a leading "the",
+ * so a lookup is one normalization and one hash probe. Entries sharing a key (remakes, reboots) are tried
+ * best rank first and disambiguated by year according to [yearRule].
+ */
+internal class TitleMatcher(entries: List<Candidate>, private val yearRule: YearRule) {
+
+    class Candidate(val names: List<String>, val year: Int)
+
+    enum class YearRule {
+        /** Movies: the provider year must be within one year of the release year. */
+        NEAR,
+
+        /**
+         * Series: metadata years are often the latest season / upload year rather than the first-air year,
+         * so a show only fails the year check when the provider year is before the show started.
+         */
+        NOT_BEFORE;
+
+        fun accepts(providerYear: Int, entryYear: Int): Boolean = when (this) {
+            NEAR -> kotlin.math.abs(providerYear - entryYear) <= 1
+            NOT_BEFORE -> providerYear >= entryYear - 1
+        }
+    }
+
+    private val years = IntArray(entries.size) { entries[it].year }
+    private val index: HashMap<String, IntArray>
+
+    init {
+        val tmp = HashMap<String, MutableList<Int>>(entries.size * 4)
+        entries.forEachIndexed { rank, entry ->
+            val keys = LinkedHashSet<String>()
+            for (n in entry.names) {
+                val k = FeaturedTitles.normalize(n)
+                if (k.isEmpty()) continue
+                keys.add(k)
+                // Providers frequently omit a leading article; index that variant too.
+                if (k.startsWith("the ") && k.length > 4) keys.add(k.substring(4))
+            }
+            for (k in keys) tmp.getOrPut(k) { ArrayList(2) }.add(rank)
+        }
+        index = HashMap(tmp.size * 2)
+        for ((k, v) in tmp) index[k] = v.sorted().toIntArray()
+    }
+
+    /** 0-based rank of the best matching entry, or -1. `year` is provider metadata (may be blank or like "2026-06-19"). */
+    fun rank(name: String, year: String = ""): Int {
+        val ranks = index[FeaturedTitles.normalize(name)] ?: return -1
+        val py = FeaturedTitles.providerYear(name, year)
+        for (r in ranks) {
+            if (py == null || yearRule.accepts(py, years[r])) return r
+        }
+        return -1
     }
 }

@@ -42,7 +42,7 @@ class HomeRecommendationsTest {
         assertEquals(listOf("old"),home.classics.map {it.id})
         assertEquals(listOf("bluey"),home.shows.map {it.id})
         assertEquals("ts5",home.hero?.id)
-        assertTrue(HomeRecommendations.featured(catalog) {it.id!="ts5"}.popular.none {it.id=="ts5"})
+        assertTrue(HomeRecommendations.featured(catalog,allowed={it.id!="ts5"}).popular.none {it.id=="ts5"})
     }
     @Test fun titlesDropProviderDecorations() {
         fun t(name: String)=HomeRecommendations.title(Channel("x","p","1",name,""))
@@ -54,5 +54,21 @@ class HomeRecommendationsTest {
         assertEquals("Up",t("Up"))
         assertEquals("Henry Danger",t("ENI Henry Danger"))
         assertEquals("Enigma",t("Enigma"))
+    }
+    @Test fun moviesPageLeadsWithPopularSafeTitles() {
+        fun movie(id: String,name: String,group: String="EN | Movies")=Channel(id,"p",id,name,"",Kind.MOVIE,group=group)
+        val catalog=CompactCatalog.Builder().apply {
+            add(movie("obscure","Whiskey Run (2026)"))
+            add(movie("adult","XXX Dreams 2"))
+            add(movie("spidey","EN - Spider-Man: Brand New Day (2026) 4K"))
+            add(movie("superman","4K-EN - Superman - 2025"))
+            add(movie("ts5","Toy Story 5 (2026)"))
+            for(i in 0 until 40) add(movie("filler$i","Indie Film $i (2026)"))
+        }.build()
+        val shelves=BrowseShelves.build(catalog,Kind.MOVIE,Curated.ranks(catalog))
+        assertEquals("Popular movies",shelves.first().title)
+        assertEquals("spidey",shelves.first().channels.first().id)
+        assertTrue(shelves.first().channels.map {it.id}.containsAll(listOf("superman","ts5")))
+        assertTrue(shelves.none {shelf->shelf.channels.any {it.id=="adult"}})
     }
 }
