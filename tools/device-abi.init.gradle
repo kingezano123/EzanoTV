@@ -1,0 +1,8 @@
+// Device-check only (used by .github/workflows/device.yml): also package the x86/x86_64 native
+// libraries so the debug APK installs on an x86 Android TV emulator image that has no ARM
+// translation. Release builds and the committed build script are unchanged.
+allprojects {
+    plugins.withId('com.android.application') {
+        project.extensions.getByName('android').defaultConfig.ndk.abiFilters.addAll(['x86', 'x86_64'])
+    }
+}

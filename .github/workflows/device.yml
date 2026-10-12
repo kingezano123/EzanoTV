@@ -1,0 +1,140 @@
+name: Device check
+
+# Runs the app on a real Android TV system image (x86 emulator with KVM) and drives it with the
+# remote's D-pad. Results (summary.md, junit.xml, numbered screenshots, logcat excerpts) are
+# published as assets of the `device-check` pre-release, replaced on every run:
+#   https://github.com/<owner>/<repo>/releases/download/device-check/summary.md
+# Trigger: Actions > Device check > Run workflow, or a push to claude/** whose message contains [device].
+on:
+  push:
+    branches: ["claude/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: device-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  device:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[device]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: write
+    env:
+      OUT: device-results
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;35.0.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install FFmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+
+      - name: Cache fixture video
+        uses: actions/cache@v4
+        with:
+          path: test-media/sintel-trailer.mp4
+          key: sintel-trailer-720p-v1
+
+      - name: Prepare fixture media (TESTING.md)
+        run: |
+          mkdir -p test-media "$OUT"
+          if [ ! -s test-media/sintel-trailer.mp4 ]; then
+            curl -fL --retry 4 --retry-delay 5 -o test-media/sintel-trailer.mp4 https://download.blender.org/durian/trailer/sintel_trailer-720p.mp4
+          fi
+          ffmpeg -loglevel error -y -i test-media/sintel-trailer.mp4 -t 25 -c:v libx264 -preset ultrafast -b:v 1200k -c:a aac -b:a 128k -f mpegts test-media/fixture.ts
+          ls -la test-media
+
+      - name: Start fixture servers
+        run: |
+          nohup node tools/fixture-server.cjs > "$OUT/fixture-8765.log" 2>&1 &
+          nohup node tools/large-fixture.cjs > "$OUT/fixture-8766.log" 2>&1 &
+          nohup node tools/device-fixture.cjs > "$OUT/fixture-8769.log" 2>&1 &
+          sleep 2
+          curl -fsS 'http://127.0.0.1:8765/player_api.php?username=test&password=test' && echo
+          curl -fsS 'http://127.0.0.1:8766/player_api.php?username=test&password=test' && echo
+          curl -fsS 'http://127.0.0.1:8769/player_api.php?username=test&password=test' && echo
+
+      - name: Build debug and test APKs
+        run: |
+          chmod +x gradlew
+          # The init script adds x86/x86_64 native libraries for the emulator (debug check only).
+          ./gradlew --no-daemon --stacktrace -I tools/device-abi.init.gradle assembleDebug assembleDebugAndroidTest 2>&1 | tee "$OUT/build.log"
+          exit ${PIPESTATUS[0]}
+
+      - name: Run on Android TV emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: android-tv
+          arch: x86
+          profile: tv_1080p
+          ram-size: 3072M
+          disk-size: 6000M
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          disable-animations: true
+          script: bash tools/device-check.sh
+
+      - name: Build report (also when the emulator step failed)
+        if: always()
+        run: |
+          mkdir -p "$OUT"
+          [ -f "$OUT/publish/summary.md" ] || node tools/device-report.cjs "$OUT" > /dev/null || true
+          cp "$OUT"/fixture-*.log "$OUT/publish/" 2>/dev/null || true
+          tail -n 200 "$OUT/build.log" > "$OUT/publish/build-tail.txt" 2>/dev/null || true
+          ls -la "$OUT/publish"
+          cat "$OUT/publish/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Replace the device-check pre-release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete device-check --cleanup-tag --yes -R "${{ github.repository }}" || true
+
+      - uses: softprops/action-gh-release@v2
+        if: always()
+        with:
+          tag_name: device-check
+          target_commitish: ${{ github.sha }}
+          name: Device check (latest run, not for install)
+          body_path: ${{ env.OUT }}/publish/summary.md
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          fail_on_unmatched_files: false
+          files: ${{ env.OUT }}/publish/*
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: device-results
+          path: ${{ env.OUT }}/
+          if-no-files-found: ignore
+
+      - name: Fail when device tests failed
+        if: always()
+        run: |
+          status="$(cat "$OUT/status.txt" 2>/dev/null || echo missing)"
+          echo "Device check status: $status"
+          test "$status" = pass
