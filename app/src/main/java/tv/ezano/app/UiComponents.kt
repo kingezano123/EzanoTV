@@ -45,6 +45,14 @@ val LocalMotion=staticCompositionLocalOf { true }
 }
 @Composable fun Tag(text: String,color: Color=LocalAccent.current) { Text(text,color=color,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,modifier=Modifier.clip(RoundedCornerShape(50)).background(color.copy(.13f)).padding(horizontal=7.dp,vertical=4.dp)) }
 @Composable fun Heading(title: String,subtitle: String="") { Column(Modifier.padding(bottom=16.dp)) { Text(title,color=Color.White,style=MaterialTheme.typography.headlineLarge,fontSize=28.sp,fontWeight=FontWeight.ExtraBold); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.padding(top=6.dp)) } }
+/** D-pad arrow → focus direction, for text fields that are not being edited. */
+internal fun remoteDirection(keyCode: Int): FocusDirection? = when(keyCode) {
+    android.view.KeyEvent.KEYCODE_DPAD_DOWN -> FocusDirection.Down
+    android.view.KeyEvent.KEYCODE_DPAD_UP -> FocusDirection.Up
+    android.view.KeyEvent.KEYCODE_DPAD_LEFT -> FocusDirection.Left
+    android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> FocusDirection.Right
+    else -> null
+}
 internal fun hasArt(url: String)=url.isNotBlank() && url!="null"
 @Composable fun Art(model: Any?,modifier: Modifier=Modifier,alignment: Alignment=Alignment.Center) { Box(modifier.background(Panel)) { if(model!=null && model!="" && model!="null" && model!="file:///android_asset/hero.png") AsyncImage(model,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop,alignment=alignment) } }
 @Composable fun Poster(c: Channel,sub: String="",favorite: Boolean=false,portrait: Boolean=false,onFocus: ()->Unit={},onClick: ()->Unit) {
@@ -95,7 +103,10 @@ internal fun hasArt(url: String)=url.isNotBlank() && url!="null"
             .onPreviewKeyEvent {event->
                 val native=event.nativeKeyEvent
                 val select=native.keyCode==android.view.KeyEvent.KEYCODE_DPAD_CENTER || native.keyCode==android.view.KeyEvent.KEYCODE_ENTER
-                if(!select || editing) false else when(native.action) {
+                // Not typing: arrows move between controls instead of being taken as cursor keys by the text field.
+                val direction=remoteDirection(native.keyCode)
+                if(!editing && direction!=null) {if(native.action==android.view.KeyEvent.ACTION_DOWN) focusManager.moveFocus(direction);true}
+                else if(!select || editing) false else when(native.action) {
                     android.view.KeyEvent.ACTION_DOWN -> {if(pendingSelectKey==0) pendingSelectKey=native.keyCode;true}
                     android.view.KeyEvent.ACTION_UP -> {val pending=pendingSelectKey==native.keyCode;pendingSelectKey=0;if(pending && !native.isCanceled) editing=true;pending}
                     else -> pendingSelectKey==native.keyCode
