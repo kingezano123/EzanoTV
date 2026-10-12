@@ -106,24 +106,11 @@ jobs:
           ls -la "$OUT/publish"
           cat "$OUT/publish/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
 
-      - name: Replace the device-check pre-release
+      - name: Publish to the device-check pre-release
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete device-check --cleanup-tag --yes -R "${{ github.repository }}" || true
-
-      - uses: softprops/action-gh-release@v2
-        if: always()
-        with:
-          tag_name: device-check
-          target_commitish: ${{ github.sha }}
-          name: Device check (latest run, not for install)
-          body_path: ${{ env.OUT }}/publish/summary.md
-          prerelease: true
-          make_latest: false
-          overwrite_files: true
-          fail_on_unmatched_files: false
-          files: ${{ env.OUT }}/publish/*
+        run: bash tools/publish-device-check.sh
 
       - uses: actions/upload-artifact@v4
         if: always()

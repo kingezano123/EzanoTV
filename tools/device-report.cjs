@@ -87,6 +87,7 @@ xml+='</testsuites>\n';fs.writeFileSync(path.join(pub,'junit.xml'),xml);
 const env=process.env;const runUrl=env.GITHUB_RUN_ID?`${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`:'';
 let md=`# Ezano TV device check: ${status.toUpperCase()}\n\n`;
 md+=`- Commit: ${env.GITHUB_SHA||'local'}${env.GITHUB_REF_NAME?` (${env.GITHUB_REF_NAME})`:''}\n- Run: ${runUrl||'local'}\n- Generated: ${new Date().toISOString()}\n- Tests: ${all.length}, failed/errored: ${failed.length}\n\n`;
+if(steps.length===0){const errs=read(path.join(out,'build.log')).split('\n').filter(l=>/^e: |error:|FAILED|What went wrong/.test(l)).slice(0,30);md+='**No device steps ran.** The build or the emulator failed before tests started (see build-tail.txt and the workflow run).\n\n'+(errs.length?'```\n'+errs.join('\n')+'\n```\n\n':'')}
 md+='## Device\n\n```\n'+read(path.join(out,'device.txt')).trim()+'\n```\n\n';
 md+='## Results\n\n| Step | Test | Result | Step time |\n|---|---|---|---|\n';
 for(const t of all)md+=`| ${t.step.name} | ${t.cls?.replace('tv.ezano.app.','')}#${t.name} | ${t.code==='0'?'PASS':(CODES[t.code]||t.code).toUpperCase()} | ${t.step.secs}s |\n`;
