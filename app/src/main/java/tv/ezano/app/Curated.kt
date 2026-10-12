@@ -24,9 +24,13 @@ object Curated {
                 val label = catalog.catalogLabel(index)
                 if (label.kind != Kind.MOVIE && label.kind != Kind.SERIES) continue
                 val movie = label.kind == Kind.MOVIE
-                val rank = if (movie) PopularTitles.movieRank(label.name, label.year) else PopularTitles.showRank(label.name, label.year)
+                // Normalize once and reuse the key for both curated lists.
+                val key = FeaturedTitles.normalize(label.name)
+                if (key.isEmpty()) continue
+                val year = FeaturedTitles.providerYear(label.name, label.year)
+                val rank = if (movie) PopularTitles.movieRankKey(key, year) else PopularTitles.showRankKey(key, year)
                 if (rank >= 0) popular[label.id] = rank
-                val kid = if (movie) FeaturedTitles.movieRank(label.name, label.year) else FeaturedTitles.showRank(label.name, label.year)
+                val kid = if (movie) FeaturedTitles.movieRankKey(key, year) else FeaturedTitles.showRankKey(key, year)
                 if (kid >= 0) kids[label.id] = kid
             }
             return CuratedRanks(popular, kids).also { cached = catalog to it }

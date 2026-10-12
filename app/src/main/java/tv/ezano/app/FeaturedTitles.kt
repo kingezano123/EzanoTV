@@ -335,6 +335,8 @@ object FeaturedTitles {
 
     /** 0-based rank of the best matching movie entry, or -1. `year` is provider metadata (may be blank or like "2026-06-19"). */
     fun movieRank(name: String, year: String = ""): Int = movieMatcher.rank(name, year)
+    internal fun movieRankKey(key: String, py: Int?): Int = movieMatcher.rankKey(key, py)
+    internal fun showRankKey(key: String, py: Int?): Int = showMatcher.rankKey(key, py)
 
     /**
      * 0-based rank of the best matching show entry, or -1.
@@ -537,9 +539,11 @@ internal class TitleMatcher(entries: List<Candidate>, private val yearRule: Year
     }
 
     /** 0-based rank of the best matching entry, or -1. `year` is provider metadata (may be blank or like "2026-06-19"). */
-    fun rank(name: String, year: String = ""): Int {
-        val ranks = index[FeaturedTitles.normalize(name)] ?: return -1
-        val py = FeaturedTitles.providerYear(name, year)
+    fun rank(name: String, year: String = ""): Int = rankKey(FeaturedTitles.normalize(name), FeaturedTitles.providerYear(name, year))
+
+    /** Same as [rank] for an already normalized title, so one normalization can serve several lists. */
+    fun rankKey(key: String, py: Int?): Int {
+        val ranks = index[key] ?: return -1
         for (r in ranks) {
             if (py == null || yearRule.accepts(py, years[r])) return r
         }

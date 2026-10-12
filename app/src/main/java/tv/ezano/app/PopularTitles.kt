@@ -597,6 +597,8 @@ object PopularTitles {
 
     /** 0-based rank of the best matching movie entry, or -1 when not curated. `year` is provider metadata (blank or like "2026-07-31"). */
     fun movieRank(name: String, year: String = ""): Int = movieMatcher.rank(name, year)
+    internal fun movieRankKey(key: String, py: Int?): Int = movieMatcher.rankKey(key, py)
+    internal fun showRankKey(key: String, py: Int?): Int = showMatcher.rankKey(key, py)
 
     /** 0-based rank of the best matching show entry, or -1 when not curated. A later provider year (latest season) still matches. */
     fun showRank(name: String, year: String = ""): Int = showMatcher.rank(name, year)
