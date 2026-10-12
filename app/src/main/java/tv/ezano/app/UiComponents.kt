@@ -31,13 +31,15 @@ val LocalMotion=staticCompositionLocalOf { true }
 
 @Composable fun EzButton(label: String,icon: ImageVector?=null,primary: Boolean=false,selected: Boolean=false,modifier: Modifier=Modifier,onFocus: (() -> Unit)?=null,onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }; val accent=LocalAccent.current; val motion=LocalMotion.current
-    val scale by animateFloatAsState(if(focused && motion) 1.025f else 1f,label="button")
-    val fill=when { focused || primary -> Color.White; selected -> Color(0xFF333333); else -> Panel.copy(.85f) }
-    val stroke=when { focused -> Color.White; selected -> Color.White.copy(.5f); else -> Color.Transparent }
-    Row(modifier.heightIn(min=36.dp).graphicsLayer { scaleX=scale; scaleY=scale }.onFocusChanged { focused=it.isFocused; if(it.isFocused) onFocus?.invoke() }.clip(RoundedCornerShape(4.dp)).background(fill).border(if(focused) 2.dp else 1.dp,stroke,RoundedCornerShape(4.dp)).semantics { this.selected=selected }.clickable(role=Role.Button,onClick=onClick).padding(horizontal=15.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        val color=if(primary || focused) Ink else Color.White
+    val scale by animateFloatAsState(if(focused && motion) 1.06f else 1f,label="button")
+    // Focus must be unmistakable from across the room: only the focused button is solid white.
+    // Primary actions stay emphasized with a bright translucent fill and a white outline.
+    val fill=when { focused -> Color.White; primary -> Color.White.copy(.24f); selected -> Color(0xFF333333); else -> Panel.copy(.85f) }
+    val stroke=when { focused -> accent; primary -> Color.White.copy(.85f); selected -> Color.White.copy(.5f); else -> Color.Transparent }
+    Row(modifier.heightIn(min=36.dp).graphicsLayer { scaleX=scale; scaleY=scale }.onFocusChanged { focused=it.isFocused; if(it.isFocused) onFocus?.invoke() }.clip(RoundedCornerShape(4.dp)).background(fill).border(if(focused) 3.dp else 1.5.dp,stroke,RoundedCornerShape(4.dp)).semantics { this.selected=selected }.clickable(role=Role.Button,onClick=onClick).padding(horizontal=15.dp,vertical=9.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        val color=if(focused) Ink else Color.White
         if(icon!=null) Icon(icon,null,Modifier.size(17.dp),tint=color)
-        Text(label,color=color,style=MaterialTheme.typography.labelMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
+        Text(label,color=color,style=MaterialTheme.typography.labelMedium,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis)
     }
 }
 @Composable fun Tag(text: String,color: Color=LocalAccent.current) { Text(text,color=color,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,modifier=Modifier.clip(RoundedCornerShape(50)).background(color.copy(.13f)).padding(horizontal=7.dp,vertical=4.dp)) }

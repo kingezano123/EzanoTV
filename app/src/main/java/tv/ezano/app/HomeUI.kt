@@ -22,7 +22,7 @@ import kotlinx.coroutines.*
 
 @Composable fun TopNavigation(a: MainActivity, onConnect: ()->Unit) {
     val s by a.store.libraryState()
-    val first=remember {FocusRequester()}
+    val first=a.navFocus
     val inputMode=LocalInputModeManager.current
     // Capture navigation intent before the content effect consumes its one-shot focus request.
     val enteringSearch=a.focusCatalogSearch
@@ -35,6 +35,8 @@ import kotlinx.coroutines.*
             var focused by remember {mutableStateOf(false)}
             val selected=a.page==page
             Column((if(selected || (a.page !in listOf("Home","Live TV","Movies","Series","My list") && i==0)) Modifier.focusRequester(first) else Modifier)
+                // Down from the bar always lands on Home's main control instead of relying on geometric search.
+                .focusProperties {if(a.page=="Home" && a.homeEntryReady) down=a.homeEntry}
                 .onPreviewKeyEvent {event->
                     if(event.nativeKeyEvent.keyCode==android.view.KeyEvent.KEYCODE_DPAD_DOWN && event.nativeKeyEvent.action==android.view.KeyEvent.ACTION_DOWN && page in listOf("Movies","Series")) {
                         val action={a.page=page;a.focusCatalogSearch=true};if(page in s.prefs.lockedSections) a.admin(action) else action();true
@@ -56,6 +58,12 @@ import kotlinx.coroutines.*
 @Composable private fun NavIcon(label: String,icon: androidx.compose.ui.graphics.vector.ImageVector,onClick: ()->Unit) {
     var focused by remember {mutableStateOf(false)}
     Box(Modifier.size(30.dp).onFocusChanged {focused=it.isFocused}.clip(RoundedCornerShape(3.dp)).border(if(focused) 1.dp else 0.dp,if(focused) Color.White else Color.Transparent,RoundedCornerShape(3.dp)).clickable(onClick=onClick),contentAlignment=Alignment.Center) {Icon(icon,label,Modifier.size(18.dp),tint=Color.White)}
+}
+
+/** Registers the control that receives focus when Down is pressed in the top bar; Up returns to the bar. */
+@Composable private fun Modifier.homeEntry(a: MainActivity): Modifier {
+    DisposableEffect(a) {a.homeEntryReady=true;onDispose {a.homeEntryReady=false}}
+    return this.focusRequester(a.homeEntry).focusProperties {up=a.navFocus}
 }
 
 object WatchHistory {
@@ -123,7 +131,7 @@ object WatchHistory {
                     }
                     if(c.description.isNotBlank()) Text(c.description,color=Color(0xFFE6E6E6),fontSize=12.5.sp,lineHeight=19.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
                     Row(Modifier.onFocusChanged {heroFocused=it.hasFocus}.padding(top=4.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
-                        EzButton(if((s.positions[c.id]?:0)>0) "Resume" else "Play",Icons.Outlined.PlayArrow,primary=true,onClick={if(c.kind==Kind.SERIES) onDetails(c) else a.play(c)})
+                        EzButton(if((s.positions[c.id]?:0)>0) "Resume" else "Play",Icons.Outlined.PlayArrow,primary=true,modifier=Modifier.homeEntry(a),onClick={if(c.kind==Kind.SERIES) onDetails(c) else a.play(c)})
                         EzButton("More info",Icons.Outlined.Info,onClick={onDetails(c)})
                     }
                 }
@@ -152,7 +160,11 @@ object WatchHistory {
             Column(Modifier.padding(horizontal=36.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("Your collection",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.SemiBold)
                 if(s.providers.isNotEmpty()) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {EzButton("Movies",onClick={a.page="Movies"});EzButton("Shows",onClick={a.page="Series"})}
-                else EzButton("Add a playlist",primary=true,onClick=onConnect)
+                else {
+                    EzButton("Add a playlist",Icons.Outlined.PlaylistAdd,primary=true,modifier=if(hero==null) Modifier.homeEntry(a) else Modifier,onClick=onConnect)
+                    // First launch: the only useful action is focused, so Select opens setup immediately.
+                    LaunchedEffect(Unit) {delay(250);runCatching {a.homeEntry.requestFocus()}}
+                }
                 Text(if(s.providers.isEmpty()) "Your movies and shows appear here once a playlist is available." else "Browse your movies and shows to find your next watch.",color=Muted,fontSize=11.sp)
             }
         }

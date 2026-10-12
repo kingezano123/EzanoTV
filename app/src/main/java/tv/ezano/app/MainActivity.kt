@@ -32,6 +32,10 @@ class MainActivity: ComponentActivity() {
     var pendingImport by mutableStateOf(false)
     var focusImportedChannel by mutableStateOf(false)
     var focusCatalogSearch by mutableStateOf(false)
+    /** Remote focus routes: Down from the top bar goes to the page's main control, Up comes back. */
+    val navFocus=androidx.compose.ui.focus.FocusRequester()
+    val homeEntry=androidx.compose.ui.focus.FocusRequester()
+    var homeEntryReady by mutableStateOf(false)
     private var session: MediaSession?=null
     val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
     private var playbackJob: Job?=null
