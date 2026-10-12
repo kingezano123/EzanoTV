@@ -102,11 +102,14 @@ class Store(private val context: Context) {
         }
         scope.launch {
             retryOpening()
+            var failures=0
             for(request in saves) {
                 delay(300)
                 while(busy.value) delay(100)
                 while(saves.tryReceive().isSuccess) {}
-                if(!flush() && !loadFailed) {delay(5000);saves.trySend(Unit)}
+                if(flush()) failures=0
+                else if(!loadFailed && ++failures<6) {delay(5000L shl (failures-1));saves.trySend(Unit)}
+                // After repeated failures (e.g. storage full), wait for the next change instead of retrying forever.
             }
         }
     }
@@ -274,6 +277,11 @@ class Store(private val context: Context) {
         if(loadFailed || !ready.value) return false
         try {
             val key=dataKey(true)
+            // Profile first: if the process dies mid-save, a new playlist is still listed and a refresh restores its titles.
+            if(savedRevision!=snapshot.revision) {
+                writeSection(profileFile,key) {out->GZIPOutputStream(out,65536).let {zip->val writer=zip.writer();LibraryStreams.write(snapshot.copy(channels=emptyList(),programs=emptyList()),writer);writer.flush();zip.finish()}}
+                savedRevision=snapshot.revision
+            }
             if(catalogOpen && snapshot.channels !== savedChannels) {
                 val catalog=VaultFormat.asCatalog(snapshot.channels)
                 writeSection(catalogFile,key) {out->java.io.DataOutputStream(out).let {VaultFormat.writeCatalog(it,catalog);it.flush()}}
@@ -283,10 +291,6 @@ class Store(private val context: Context) {
                 val guide=VaultFormat.asGuide(snapshot.programs)
                 writeSection(guideFile,key) {out->java.io.DataOutputStream(out).let {VaultFormat.writeGuide(it,guide);it.flush()}}
                 savedPrograms=snapshot.programs
-            }
-            if(savedRevision!=snapshot.revision) {
-                writeSection(profileFile,key) {out->GZIPOutputStream(out,65536).let {zip->val writer=zip.writer();LibraryStreams.write(snapshot.copy(channels=emptyList(),programs=emptyList()),writer);writer.flush();zip.finish()}}
-                savedRevision=snapshot.revision
             }
             val shelves=home.value
             if(shelves!==savedHome && !shelves.isEmpty) {

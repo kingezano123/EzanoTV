@@ -35,7 +35,13 @@ class MainActivity: ComponentActivity() {
     /** Remote focus routes: Down from the top bar goes to the page's main control, Up comes back. */
     val navFocus=androidx.compose.ui.focus.FocusRequester()
     val homeEntry=androidx.compose.ui.focus.FocusRequester()
+    /** Home's scrolling content as a whole: entering it focuses its best control (hero Play, a row, Add a playlist). */
+    val homeContent=androidx.compose.ui.focus.FocusRequester()
+    /** The browse screens kept underneath playback, so Back returns to the same title, row and filters. */
+    val browseFocus=androidx.compose.ui.focus.FocusRequester()
     var homeEntryReady by mutableStateOf(false)
+    /** Set after a playlist import so Home focuses its new content once it appears. */
+    var focusHomeContent by mutableStateOf(false)
     private var session: MediaSession?=null
     val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
     private var playbackJob: Job?=null
@@ -48,14 +54,17 @@ class MainActivity: ComponentActivity() {
     fun setSpeechEnabled(value:Boolean){
         speechSettings.edit().putBoolean("enabled",value).apply()
         val engine=speech
+        if(value) captionsSuppressed=false
         // The audio tap is attached when the player is created; only turning captions on for the first time restarts it.
         if(engine!=null) engine.enable(value && !textTrackSelected()) else if(value) playing?.let {startPlayback(it)}
     }
     private fun textTrackSelected()=player?.currentTracks?.groups?.any {g->g.type==androidx.media3.common.C.TRACK_TYPE_TEXT && g.isSelected}==true
     private var revealKey=0
-    fun manualSubtitles(){subtitleSelectionManual=true;subtitleJob?.cancel()}
+    /** Set by a manual subtitle choice ("Subtitles off" or a track): live captions stay off until re-enabled. */
+    private var captionsSuppressed=false
+    fun manualSubtitles(){subtitleSelectionManual=true;subtitleJob?.cancel();captionsSuppressed=true;speech?.enable(false)}
     fun automaticSubtitles(){
-        subtitleSelectionManual=false
+        subtitleSelectionManual=false;captionsSuppressed=false
         player?.let {p->p.trackSelectionParameters=p.trackSelectionParameters.buildUpon().clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_TEXT).setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT,false).setPreferredTextLanguages("en","eng").build();playing?.let {subtitleJob?.cancel();discoverSubtitles(it,p,force=true)}}
     }
     fun browsePlayback(){stopPlayback()}
@@ -73,7 +82,7 @@ class MainActivity: ComponentActivity() {
     }
     companion object { var active: WeakReference<MainActivity>?=null }
     private val createBackup=registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri-> if(uri!=null) scope.launch { val pass=backupPassword; backupPassword=""; try { withContext(Dispatchers.IO) { store.awaitLibrary(); val encrypted=Crypto.backup(Json.encode(store.state.value),pass); contentResolver.openOutputStream(uri)?.use { it.write(encrypted) }?:error("No output") }; message="Encrypted backup saved" } catch(_: Exception) { message="Backup could not be saved" } } else backupPassword="" }
-    private val openBackup=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri-> if(uri!=null) scope.launch { val pass=backupPassword; backupPassword=""; try { val raw=withContext(Dispatchers.IO) { val bytes=contentResolver.openInputStream(uri)?.use { input->val out=java.io.ByteArrayOutputStream(); val buf=ByteArray(32768); while(true) { val n=input.read(buf); if(n<0) break; require(out.size()+n<=128*1024*1024); out.write(buf,0,n) }; out.toByteArray() }?:error("No input"); Crypto.restore(bytes,pass).also { Json.decode(it) } }; stopPlayback(); store.state.value.recordings.forEach { Scheduler.cancel(this@MainActivity,it) }; withContext(Dispatchers.IO) { store.restore(raw); store.update { s-> s.copy(recordings=s.recordings.map { r->if(r.status=="recording") r.copy(status="interrupted",path="",error="Recording files are not part of a settings backup") else r.copy(path="") }) } }; store.state.value.recordings.filter { it.status=="scheduled" && it.end>System.currentTimeMillis() }.forEach { Scheduler.schedule(this@MainActivity,it) }; message="Backup restored. Recording files stay on their original device." } catch(_: Exception) { message="Restore failed. Check the passphrase and backup file." } } else backupPassword="" }
+    private val openBackup=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri-> if(uri!=null) scope.launch { val pass=backupPassword; backupPassword=""; try { val raw=withContext(Dispatchers.IO) { val bytes=contentResolver.openInputStream(uri)?.use { input->val out=java.io.ByteArrayOutputStream(); val buf=ByteArray(32768); while(true) { val n=input.read(buf); if(n<0) break; require(out.size()+n<=128*1024*1024); out.write(buf,0,n) }; out.toByteArray() }?:error("No input"); Crypto.restore(bytes,pass).also { Json.decode(it) } }; stopPlayback(); store.state.value.recordings.forEach { Scheduler.cancel(this@MainActivity,it) }; withContext(Dispatchers.IO) { store.awaitLibrary(); store.restore(raw); store.update { s-> s.copy(recordings=s.recordings.map { r->if(r.status=="recording") r.copy(status="interrupted",path="",error="Recording files are not part of a settings backup") else r.copy(path="") }) } }; store.state.value.recordings.filter { it.status=="scheduled" && it.end>System.currentTimeMillis() }.forEach { Scheduler.schedule(this@MainActivity,it) }; message="Backup restored. Recording files stay on their original device." } catch(_: Exception) { message="Restore failed. Check the passphrase and backup file." } } else backupPassword="" }
     override fun onCreate(savedInstanceState: Bundle?) { super.onCreate(savedInstanceState); active=WeakReference(this); WindowCompat.setDecorFitsSystemWindows(window,false); window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); setContent { EzanoRoot(this) }; scope.launch { store.awaitCatalog(); val id=intent.getStringExtra("channel"); if(id!=null) requestChannel(id) else if(store.state.value.prefs.resumeLast) requestChannel(store.state.value.lastChannel); if(store.shouldRefresh()) store.refreshGuideAutomatically(); while(isActive) {delay(60000);if(active?.get()===this@MainActivity && store.shouldRefresh()) store.refreshGuideAutomatically()} } }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); intent.getStringExtra("channel")?.let { requestChannel(it) } }
     fun requestChannel(id: String) { scope.launch {store.awaitCatalog();withContext(Dispatchers.Default) {store.state.value.channels.selectCatalog {it.id==id}.firstOrNull()}?.let {play(it)}} }
@@ -83,7 +92,7 @@ class MainActivity: ComponentActivity() {
     fun startPlayback(c: Channel) {
         subtitleJob?.cancel();playbackJob?.cancel(); playbackJob=scope.launch { try {
             val resolved=withContext(Dispatchers.IO) { Sources.resolve(store.state.value.providers.firstOrNull { it.id==c.provider },c) }
-            savePosition(); session?.release(); player?.release();speech?.close();player=null; playing=c
+            savePosition(); session?.release(); player?.release();speech?.close();player=null; playing=c;captionsSuppressed=false
             speech=if(speechEnabled() && SpeechModel.installed(this@MainActivity))SpeechCaptions(this@MainActivity) else null
             player=Playback.create(this@MainActivity,resolved,store.state.value.prefs.afr,subtitleLanguage=store.state.value.prefs.subtitleLanguage,autoSubtitles=store.state.value.prefs.autoSubtitles,speech=speech)
             if(c.kind!=Kind.LIVE) player?.seekTo(store.state.value.positions[c.id]?:0)
@@ -91,7 +100,7 @@ class MainActivity: ComponentActivity() {
             // Live captions start with the video; a stream or provider subtitle track pauses them when it appears.
             speech?.enable(true)
             player!!.addListener(object:Player.Listener {
-                override fun onTracksChanged(tracks:androidx.media3.common.Tracks){val selected=tracks.groups.any {g->g.type==androidx.media3.common.C.TRACK_TYPE_TEXT && g.isSelected};speech?.enable(!selected && speechEnabled(),subtitles=selected)}
+                override fun onTracksChanged(tracks:androidx.media3.common.Tracks){val selected=tracks.groups.any {g->g.type==androidx.media3.common.C.TRACK_TYPE_TEXT && g.isSelected};speech?.enable(!selected && speechEnabled() && !captionsSuppressed,subtitles=selected)}
                 override fun onPositionDiscontinuity(oldPosition:Player.PositionInfo,newPosition:Player.PositionInfo,reason:Int){speech?.playheadMs=newPosition.positionMs;speech?.reset()}
             })
             if(c.kind==Kind.LIVE) store.update { it.copy(lastChannel=c.id) }

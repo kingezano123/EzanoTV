@@ -21,6 +21,7 @@ import kotlinx.coroutines.*
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable fun EzanoRoot(a: MainActivity) {
     val s by a.store.libraryState(); val ready by a.store.ready.collectAsState(); val busy by a.store.busy.collectAsState(); val error by a.store.error.collectAsState()
     var providerModal by remember { mutableStateOf(false) }; var details by remember { mutableStateOf<Channel?>(null) }; var program by remember { mutableStateOf<Pair<Channel,Program>?>(null) }; var exit by remember { mutableStateOf(false) }
@@ -32,10 +33,14 @@ import java.time.format.DateTimeFormatter
         if(!ready) {StartupRecovery(a);return@CompositionLocalProvider}
         val movieSearchFocus = remember { FocusRequester() }
         BackHandler { when { a.fullPlayer -> a.browsePlayback(); a.page!="Home" -> a.page="Home"; else ->exit=true } }
+        val playing=a.fullPlayer && a.player!=null
+        var wasPlaying by remember {mutableStateOf(false)}
+        // Back from a video lands on the same title, row, scroll position and filters.
+        LaunchedEffect(playing) {if(playing) wasPlaying=true else if(wasPlaying) {wasPlaying=false;delay(80);runCatching {a.browseFocus.requestFocus()}}}
         Box(Modifier.fillMaxSize().background(Ink)) {
-            if(a.fullPlayer && a.player!=null) PlayerScreen(a)
-            else {
-                Box(Modifier.fillMaxSize()) {
+            // Browsing stays composed under playback (hidden), instead of being rebuilt from scratch afterwards.
+            run {
+                Box(Modifier.fillMaxSize().graphicsLayer {alpha=if(playing) 0f else 1f}.focusRequester(a.browseFocus).focusRestorer().focusGroup()) {
                     Box(Modifier.fillMaxSize().padding(top=if(a.page=="Home") 0.dp else 82.dp)) { when(a.page) {
                         "Home"->CinemaHome(a,{details=it},{a.admin {providerModal=true}})
                         "Live TV"->LiveScreen(a,{details=it},{c,p->program=c to p},{a.admin {providerModal=true}})
@@ -49,6 +54,7 @@ import java.time.format.DateTimeFormatter
                     TopNavigation(a) {a.admin {providerModal=true}}
                 }
             }
+            if(playing) PlayerScreen(a)
             if(error.isNotBlank() && !a.fullPlayer) Row(Modifier.align(Alignment.BottomCenter).padding(20.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF47262A)).padding(12.dp),verticalAlignment=Alignment.CenterVertically) { Text(error,color=Color.White,fontSize=12.sp,modifier=Modifier.weight(1f)); EzButton("Dismiss",onClick={a.store.error.value=""}) }
             if(a.message.isNotBlank()) { val message=a.message; LaunchedEffect(message) { delay(6500); if(a.message==message) a.message="" }; Text(a.message,color=Color.White,fontSize=12.sp,modifier=Modifier.align(Alignment.BottomCenter).padding(22.dp).clip(RoundedCornerShape(10.dp)).background(Panel).border(1.dp,accent.copy(.3f),RoundedCornerShape(10.dp)).padding(15.dp)) }
         }
@@ -56,7 +62,7 @@ import java.time.format.DateTimeFormatter
         details?.let { c-> DetailDialog(a,c,onDismiss={details=null},onProgram={p->details=null; program=c to p}) }
         program?.let { (c,p)->ProgramDialog(a,c,p) {program=null} }
         a.pinRequest?.let { action->PinDialog(a,onDismiss={a.pinRequest=null}) { a.pinRequest=null; action() } }
-        if(exit) Modal("Leave Ezano TV?",{exit=false}) { Text("Your playlists and watch progress are saved.",color=Muted); Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { EzButton("Keep watching",primary=true,onClick={exit=false}); EzButton("Exit",onClick={a.finish()}) } }
+        if(exit) Modal("Leave Ezano TV?",{exit=false}) { val keep=remember {FocusRequester()};LaunchedEffect(Unit) {delay(200);runCatching {keep.requestFocus()}}; Text("Your playlists and watch progress are saved.",color=Muted); Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { EzButton("Keep watching",primary=true,modifier=Modifier.focusRequester(keep),onClick={exit=false}); EzButton("Exit",onClick={a.finish()}) } }
     } }
 }
 @Composable fun ContentRow(title: String,items: List<Channel>,favorites: Set<String>,onDetails: (Channel)->Unit,subtitle: String="",portrait: Boolean=false) {

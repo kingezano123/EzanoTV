@@ -39,13 +39,16 @@ import java.time.format.DateTimeFormatter
             result
         }
     }
-    val showChannels: ()->Unit={add=false;editor=null;onDismiss();a.focusImportedChannel=true;a.page="Live TV"}
+    // After an import, open Home: it showcases the new library whatever it contains (a movies-only playlist has no Live TV).
+    val showChannels: ()->Unit={add=false;editor=null;onDismiss();a.focusImportedChannel=false;a.page="Home";a.focusHomeContent=true}
+    val firstAction=remember {FocusRequester()}
     Modal("Your playlists",onDismiss) {
+        LaunchedEffect(Unit) {delay(200);runCatching {firstAction.requestFocus()}}
         Text("Connect your own service. Playlists stay together; credentials stay encrypted on this device.",color=Muted,fontSize=12.sp)
         s.providers.forEach { p-> Column {Text(p.name,color=Color.White,fontSize=16.sp,fontWeight=FontWeight.SemiBold);Text("${p.type.uppercase()} · ${counts?.let {"${it[p.id]?:0} items"}?:"Reading library…"} · ${if(p.enabled) "Enabled" else "Disabled"}",color=Muted,fontSize=11.sp);Row(Modifier.padding(top=9.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)) {EzButton("Edit",onClick={if(!busy) editor=p});EzButton(if(p.enabled) "Disable" else "Enable",onClick={if(!busy) a.store.update {it.copy(providers=it.providers.map {v->if(v.id==p.id) v.copy(enabled=!v.enabled) else v})}});EzButton("Remove",onClick={if(!busy) deleting=p})}}
         }
         if(busy) {LinearProgressIndicator(Modifier.fillMaxWidth(),color=LocalAccent.current);Text(progress.ifBlank {"Preparing your library…"},color=Muted,fontSize=12.sp)}
-        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {EzButton("Add playlist",Icons.Outlined.Add,primary=true,onClick={if(!busy) add=true});EzButton(if(busy) "Updating…" else "Refresh all",Icons.Outlined.Refresh,onClick={if(!busy) a.scope.launch {if(a.store.refresh()) {a.message="100% · Library saved. Ready to watch.";showChannels()}}})}
+        Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {EzButton("Add playlist",Icons.Outlined.Add,primary=true,modifier=Modifier.focusRequester(firstAction),onClick={if(!busy) add=true});EzButton(if(busy) "Updating…" else "Refresh all",Icons.Outlined.Refresh,onClick={if(!busy) a.scope.launch {if(a.store.refresh()) {a.message="100% · Library saved. Ready to watch.";showChannels()}}})}
         if(!busy && s.channels.isNotEmpty()) EzButton("Open saved library",Icons.Outlined.LiveTv,primary=true,onClick=showChannels)
         Text("Use the server address, username and password supplied by your IPTV service. Ezano does not supply paid channels.",color=Muted,fontSize=11.sp)
     }
@@ -56,8 +59,11 @@ import java.time.format.DateTimeFormatter
     var type by remember {mutableStateOf(original?.type?:"xtream")};var name by remember {mutableStateOf(original?.name?:"")};var url by remember {mutableStateOf(original?.url?:"")};var user by remember {mutableStateOf(original?.user?:"")};var password by remember {mutableStateOf(original?.password?:"")};var epg by remember {mutableStateOf(original?.epg?:"")};var mac by remember {mutableStateOf(original?.mac?:"")};var error by remember {mutableStateOf("")};val busy by a.store.busy.collectAsState();val progress by a.store.progress.collectAsState()
     val connectFocus=remember {FocusRequester()};val keyboard=LocalSoftwareKeyboardController.current
     LaunchedEffect(error) {if(error.isNotBlank()) runCatching {connectFocus.requestFocus()}}
+    val typeFocus=remember {FocusRequester()}
     Modal(if(original==null) "Connect your playlist" else "Edit playlist",onDismiss) {
-        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {listOf("xtream" to "Xtream Codes","m3u" to "M3U URL","stalker" to "Stalker portal").forEach {(id,label)->EzButton(label,selected=type==id,onClick={type=id})}}
+        // Start on the playlist type so the keyboard stays closed until a field is selected.
+        LaunchedEffect(Unit) {delay(200);runCatching {typeFocus.requestFocus()}}
+        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {listOf("xtream" to "Xtream Codes","m3u" to "M3U URL","stalker" to "Stalker portal").forEach {(id,label)->EzButton(label,selected=type==id,modifier=if(id==type) Modifier.focusRequester(typeFocus) else Modifier,onClick={type=id})}}
         Field("Playlist name",name,{name=it});Field(if(type=="m3u") "Playlist URL" else if(type=="stalker") "Portal URL" else "Server URL (include http:// or https://)",url,{url=it})
         if(type=="xtream") {Field("Username",user,{user=it});Field("Password",password,{password=it},true)}
         if(type=="stalker") {Field("Your provider-registered MAC address",mac,{mac=it});Text("Basic Stalker live-channel support. Portal authentication and guide extensions vary by provider.",color=Muted,fontSize=11.sp)}

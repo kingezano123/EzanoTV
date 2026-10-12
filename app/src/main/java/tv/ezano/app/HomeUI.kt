@@ -36,7 +36,7 @@ import kotlinx.coroutines.*
             val selected=a.page==page
             Column((if(selected || (a.page !in listOf("Home","Live TV","Movies","Series","My list") && i==0)) Modifier.focusRequester(first) else Modifier)
                 // Down from the bar always lands on Home's main control instead of relying on geometric search.
-                .focusProperties {if(a.page=="Home" && a.homeEntryReady) down=a.homeEntry}
+                .focusProperties {if(a.page=="Home") down=if(a.homeEntryReady) a.homeEntry else a.homeContent}
                 .onPreviewKeyEvent {event->
                     if(event.nativeKeyEvent.keyCode==android.view.KeyEvent.KEYCODE_DPAD_DOWN && event.nativeKeyEvent.action==android.view.KeyEvent.ACTION_DOWN && page in listOf("Movies","Series")) {
                         val action={a.page=page;a.focusCatalogSearch=true};if(page in s.prefs.lockedSections) a.admin(action) else action();true
@@ -48,16 +48,17 @@ import kotlinx.coroutines.*
             }
         }
         Spacer(Modifier.weight(1f))
-        NavIcon("Search",Icons.Outlined.Search) {a.page="Search"}
-        NavIcon("Playlists",Icons.Outlined.PlaylistPlay,onConnect)
-        NavIcon("Recordings",Icons.Outlined.FiberManualRecord) {a.page="Recordings"}
-        NavIcon("Settings",Icons.Outlined.Settings) {a.admin {a.page="Settings"}}
+        NavIcon(a,"Search",Icons.Outlined.Search) {a.page="Search"}
+        NavIcon(a,"Playlists",Icons.Outlined.PlaylistPlay,onConnect)
+        NavIcon(a,"Recordings",Icons.Outlined.FiberManualRecord) {a.page="Recordings"}
+        NavIcon(a,"Settings",Icons.Outlined.Settings) {a.admin {a.page="Settings"}}
     }
 }
 
-@Composable private fun NavIcon(label: String,icon: androidx.compose.ui.graphics.vector.ImageVector,onClick: ()->Unit) {
+@Composable private fun NavIcon(a: MainActivity,label: String,icon: androidx.compose.ui.graphics.vector.ImageVector,onClick: ()->Unit) {
     var focused by remember {mutableStateOf(false)}
-    Box(Modifier.size(30.dp).onFocusChanged {focused=it.isFocused}.clip(RoundedCornerShape(3.dp)).border(if(focused) 1.dp else 0.dp,if(focused) Color.White else Color.Transparent,RoundedCornerShape(3.dp)).clickable(onClick=onClick),contentAlignment=Alignment.Center) {Icon(icon,label,Modifier.size(18.dp),tint=Color.White)}
+    // Home content starts under the floating bar, so geometric focus search would skip it; route Down explicitly.
+    Box(Modifier.size(30.dp).focusProperties {if(a.page=="Home") down=if(a.homeEntryReady) a.homeEntry else a.homeContent}.onFocusChanged {focused=it.isFocused}.clip(RoundedCornerShape(3.dp)).border(if(focused) 1.dp else 0.dp,if(focused) Color.White else Color.Transparent,RoundedCornerShape(3.dp)).clickable(onClick=onClick),contentAlignment=Alignment.Center) {Icon(icon,label,Modifier.size(18.dp),tint=Color.White)}
 }
 
 /** Registers the control that receives focus when Down is pressed in the top bar; Up returns to the bar. */
@@ -65,6 +66,8 @@ import kotlinx.coroutines.*
     DisposableEffect(a) {a.homeEntryReady=true;onDispose {a.homeEntryReady=false}}
     return this.focusRequester(a.homeEntry).focusProperties {up=a.navFocus}
 }
+
+private val homeCache=ScreenCache<HomeSnapshot>(2)
 
 object WatchHistory {
     private val mature=Regex("(?i)\\b(xxx|adult|porn|erotic|explicit|uncensored)\\b")
@@ -89,7 +92,11 @@ object WatchHistory {
     var resume by remember {mutableStateOf<List<Channel>>(emptyList(),referentialEqualityPolicy())}
     LaunchedEffect(uiKey(s.channels),s.providers,s.hidden,s.hiddenGroups,s.locked,s.prefs.lockedSections,catalogOpen) {
         if(!catalogOpen) return@LaunchedEffect
-        val shelves=withContext(Dispatchers.Default) {HomeRecommendations.featured(a.store.visible(),allowed={it.id !in s.locked && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections},ranks=Curated.ranks(s.channels))}
+        val shelves=withContext(Dispatchers.Default) {
+            val visible=a.store.visible();val ranks=Curated.ranks(s.channels)
+            val key=listOf(uiKey(visible),uiKey(ranks),s.locked,s.prefs.lockedSections)
+            homeCache.get(key)?:HomeRecommendations.featured(visible,allowed={it.id !in s.locked && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections},ranks=ranks).also {homeCache.put(key,it)}
+        }
         computed=shelves
         a.store.saveHome(shelves)
     }
@@ -101,7 +108,8 @@ object WatchHistory {
     var heroIndex by remember(heroes) {mutableIntStateOf(0)}
     var heroFocused by remember {mutableStateOf(false)}
     val details=remember {mutableStateMapOf<String,Channel>()}
-    LaunchedEffect(heroes,heroFocused) {if(heroes.size>1 && !heroFocused) while(true){delay(9000);heroIndex=(heroIndex+1)%heroes.size}}
+    // The billboard pauses while focused and while a video plays over the (still composed) Home.
+    LaunchedEffect(heroes,heroFocused,a.fullPlayer) {if(heroes.size>1 && !heroFocused && !a.fullPlayer) while(true){delay(9000);heroIndex=(heroIndex+1)%heroes.size}}
     LaunchedEffect(heroes) {
         for(c in heroes) {
             if(c.id in details || c.kind!=Kind.MOVIE) continue
@@ -110,9 +118,10 @@ object WatchHistory {
         }
     }
     val hero=heroes.getOrNull(heroIndex)?.let {details[it.id]?:it}
+    LaunchedEffect(a.focusHomeContent,a.homeEntryReady) {if(a.focusHomeContent && a.homeEntryReady) {delay(250);runCatching {a.homeEntry.requestFocus()};a.focusHomeContent=false}}
     val screenHeight=androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     val motion=LocalMotion.current
-    LazyColumn(Modifier.fillMaxSize().background(Ink),contentPadding=PaddingValues(bottom=28.dp)) {
+    LazyColumn(Modifier.fillMaxSize().focusRequester(a.homeContent).focusGroup().background(Ink),contentPadding=PaddingValues(bottom=28.dp)) {
         hero?.let {c->item(key="hero") {
             Box(Modifier.fillMaxWidth().height(screenHeight*.80f)) {
                 val art=c.backdrop.takeIf(::hasArt)?:c.logo
@@ -159,7 +168,7 @@ object WatchHistory {
         if(shelves.isEmpty && catalogOpen) item {
             Column(Modifier.padding(horizontal=36.dp,vertical=18.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 Text("Your collection",color=Color.White,fontSize=18.sp,fontWeight=FontWeight.SemiBold)
-                if(s.providers.isNotEmpty()) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {EzButton("Movies",onClick={a.page="Movies"});EzButton("Shows",onClick={a.page="Series"})}
+                if(s.providers.isNotEmpty()) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {EzButton("Movies",primary=true,modifier=if(hero==null) Modifier.homeEntry(a) else Modifier,onClick={a.page="Movies"});EzButton("Shows",onClick={a.page="Series"});EzButton("Live TV",onClick={a.page="Live TV"})}
                 else {
                     EzButton("Add a playlist",Icons.Outlined.PlaylistAdd,primary=true,modifier=if(hero==null) Modifier.homeEntry(a) else Modifier,onClick=onConnect)
                     // First launch: the only useful action is focused, so Select opens setup immediately.

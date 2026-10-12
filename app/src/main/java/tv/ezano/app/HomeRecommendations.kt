@@ -102,11 +102,12 @@ object HomeRecommendations {
         fun better(a: CatalogLabel, b: CatalogLabel) = compareValuesBy(a,b,{it.englishRank},{!it.familyEligible},{it.name.length}) < 0
         for(index in channels.indices) {
             val label=channels.catalogLabel(index)
-            if((label.kind!=Kind.MOVIE && label.kind!=Kind.SERIES) || label.englishRank>2 || !allowed(label)) continue
-            if(adult.containsMatchIn("${label.name} ${label.group} ${label.genre}")) continue
+            if((label.kind!=Kind.MOVIE && label.kind!=Kind.SERIES) || label.englishRank>2) continue
+            // Cheap curated lookup first; the text checks below only run for the few hundred matches.
             val movie=label.kind==Kind.MOVIE
             val rank=kidsRank(label)
-            if(rank<0) continue
+            if(rank<0 || !allowed(label)) continue
+            if(adult.containsMatchIn("${label.name} ${label.group} ${label.genre}")) continue
             // One-word titles ("Frozen", "Soul") need a year or a family label to be the famous film.
             if(label.year.isBlank() && FeaturedTitles.yearIn(label.name)==null && ' ' !in FeaturedTitles.normalize(label.name)
                 && !label.familyEligible && !familyHint.containsMatchIn("${label.group} ${label.genre}")) continue

@@ -59,21 +59,26 @@ private fun playbackTime(ms: Long): String {val sec=(ms.coerceAtLeast(0)/1000);r
     SideEffect {a.playerDialogOpen=dialogOpen};DisposableEffect(a){onDispose{a.playerDialogOpen=false}}
     LaunchedEffect(toolsVisible,dialogOpen){if(toolsVisible && !dialogOpen){delay(60);runCatching {playFocus.requestFocus()}}}
     LaunchedEffect(toolsVisible,a.playerControlsInteraction,dialogOpen,s.prefs.panelSeconds){if(toolsVisible && !dialogOpen){delay(s.prefs.panelSeconds.coerceIn(2,30)*1000L);a.hidePlayerControls()}}
-    var retries by remember(p) {mutableIntStateOf(0)};val recovery=rememberCoroutineScope()
+    var retries by remember(p) {mutableIntStateOf(0)};val recovery=rememberCoroutineScope();var steady by remember(p) {mutableStateOf<Job?>(null)}
     DisposableEffect(p){val listener=object:Player.Listener {
         override fun onPlayerError(error:PlaybackException){
+            steady?.cancel()
             // Live streams reconnect by themselves a few times before asking; falling behind the live window jumps to live.
             if(error.errorCode==PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW){p.seekToDefaultPosition();p.prepare();return}
-            if(c.kind==Kind.LIVE && retries<3){retries++;recovery.launch {delay(1500L*retries);p.prepare();p.play()};return}
+            if(c.kind==Kind.LIVE && retries<3){retries++;recovery.launch {delay(1500L*retries);if(a.player===p){p.prepare();p.play()}};return}
             status="This stream was interrupted. Check your connection or try again."
         }
-        override fun onPlaybackStateChanged(state:Int){if(state==Player.STATE_READY){status="";retries=0}}
+        // The retry budget refills only after 30 s of steady playback, so a provider that keeps
+        // dropping the connection shows the error instead of reconnecting forever.
+        override fun onPlaybackStateChanged(state:Int){if(state==Player.STATE_READY){status="";steady?.cancel();steady=recovery.launch {delay(30000);retries=0}}}
         override fun onIsPlayingChanged(value:Boolean){isPlaying=value}
-    };p.addListener(listener);onDispose{p.removeListener(listener);p.volume=1f}}
+    };p.addListener(listener);onDispose{p.removeListener(listener);steady?.cancel();p.volume=1f}}
     LaunchedEffect(p){while(true){position=p.currentPosition;duration=p.duration.coerceAtLeast(0);delay(350)}}
     LaunchedEffect(p,a.speech){var lastPosition=-1L;while(true){val now=p.currentPosition;val engine=a.speech;engine?.playheadMs=now;if(p.isPlaying || kotlin.math.abs(now-lastPosition)>250 || engine?.enabled!=true)speechText=engine?.captionAt(now).orEmpty();lastPosition=now;delay(100)}}
     LaunchedEffect(activeAudio){p.volume=if(activeAudio==c.id)1f else 0f}
-    Box(Modifier.fillMaxSize().background(Color.Black).clickable {a.showPlayerControls()}) {
+    // Remote focus stays inside the player; the hidden browse screens underneath can't steal it.
+    @Suppress("DEPRECATION")
+    Box(Modifier.fillMaxSize().background(Color.Black).focusProperties {exit={FocusRequester.Cancel}}.focusGroup().clickable {a.showPlayerControls()}) {
         if(multi.isEmpty())VideoSurface(p,Modifier.fillMaxSize(),false,resize=resize,controlsVisible=toolsVisible && !dialogOpen,boxedCaptions=s.prefs.subtitleBackground)
         else Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             (listOf(c)+multi).chunked(2).forEach {row->Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(4.dp)){row.forEach {tile->Box(Modifier.weight(1f).fillMaxHeight().border(1.dp,if(toolsVisible && activeAudio==tile.id)Color.White else Color.Transparent).clickable {a.showPlayerControls();activeAudio=tile.id}){if(tile.id==c.id)VideoSurface(p,Modifier.fillMaxSize(),false)else MultiVideo(a,tile,activeAudio==tile.id);if(toolsVisible)Text(tile.name,color=Color.White,fontSize=11.sp,modifier=Modifier.align(Alignment.TopStart).background(Color.Black.copy(.65f)).padding(7.dp))}};if(row.size==1)Spacer(Modifier.weight(1f))}}

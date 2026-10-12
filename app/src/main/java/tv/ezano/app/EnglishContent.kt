@@ -31,9 +31,8 @@ data class BrowseShelf(val title: String, val channels: List<Channel>, val filte
 
 object BrowseShelves {
     private val genres = listOf("Comedy" to "comedy|sitcom", "Action & adventure" to "action|adventure", "Drama" to "drama", "Documentaries" to "documentary|documentaries|nature", "Animation" to "animation|anime|cartoon", "Science fiction" to "science.?fiction|sci.?fi", "Family favorites" to "family|kids|children")
-    /** Kept off the front rows; the full catalog, categories and search still reach everything. */
-    private val unsafe = Regex("(?i)\\b(?:xxx|adult|adults only|porn\\w*|erotic\\w*|sex\\w*|nsfw|18\\+|uncensored|explicit|playboy|hentai|nude|nudity|horror)\\b")
-    private fun safe(label: CatalogLabel) = !unsafe.containsMatchIn("${label.name} ${label.group} ${label.genre}")
+    private val cache = ScreenCache<List<BrowseShelf>>()
+    private fun safeByText(label: CatalogLabel) = !Curated.unsafeTitle.containsMatchIn("${label.name} ${label.group} ${label.genre}")
 
     /** Front rows lead with the most popular, recognisable titles the provider carries (PopularTitles: US hits,
      * G–PG-13 / up to TV-14), grouped by genre, then kids favourites, then the provider's own best-rated titles.
@@ -41,6 +40,13 @@ object BrowseShelves {
      */
     fun build(channels: List<Channel>, kind: Kind = Kind.MOVIE, ranks: CuratedRanks? = null): List<BrowseShelf> {
         if (channels.isEmpty()) return emptyList()
+        val key = listOf(uiKey(channels), kind, uiKey(ranks))
+        cache.get(key)?.let { return it }
+        return compute(channels, kind, ranks).also { cache.put(key, it) }
+    }
+
+    private fun compute(channels: List<Channel>, kind: Kind, ranks: CuratedRanks?): List<BrowseShelf> {
+        val safe: (CatalogLabel) -> Boolean = if (ranks != null) ranks::safe else ::safeByText
         val movie = kind == Kind.MOVIE
         val result = ArrayList<BrowseShelf>()
         val shown = HashSet<String>()
