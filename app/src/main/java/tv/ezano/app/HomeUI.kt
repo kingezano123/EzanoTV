@@ -27,7 +27,9 @@ import kotlinx.coroutines.*
     // Capture navigation intent before the content effect consumes its one-shot focus request.
     val enteringSearch=a.focusCatalogSearch
     LaunchedEffect(a.page) {if(!a.focusImportedChannel && !enteringSearch && !a.focusCatalogSearch) {inputMode.requestInputMode(InputMode.Keyboard);runCatching {first.requestFocus()}} }
-    Row(Modifier.fillMaxWidth().height(66.dp).background(Color.Black.copy(.97f)).padding(horizontal=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
+    // On Home the bar floats over the full-screen artwork, like Disney+; other pages keep a solid bar.
+    val navBackground=if(a.page=="Home") Brush.verticalGradient(listOf(Color.Black.copy(.82f),Color.Black.copy(.35f),Color.Transparent)) else Brush.verticalGradient(listOf(Color.Black,Color.Black))
+    Row(Modifier.fillMaxWidth().height(if(a.page=="Home") 84.dp else 66.dp).background(navBackground).padding(horizontal=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
         Text("EZANO",color=Color.White,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp,modifier=Modifier.padding(end=18.dp))
         listOf("Home" to "Home","Live TV" to "Live TV","Movies" to "Movies","Series" to "Shows","My list" to "My stuff").forEachIndexed {i,(page,label)->
             var focused by remember {mutableStateOf(false)}
@@ -39,7 +41,7 @@ import kotlinx.coroutines.*
                     } else false
                 }.onFocusChanged {focused=it.isFocused}.clip(RoundedCornerShape(3.dp)).background(if(focused) Color(0xFF252525) else Color.Transparent)
                 .clickable {if(page in s.prefs.lockedSections) a.admin {a.page=page} else a.page=page}.padding(horizontal=11.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                Text(label,color=if(selected||focused) Color.White else Muted,fontSize=11.sp,fontWeight=if(selected||focused) FontWeight.Bold else FontWeight.Normal)
+                Text(label,color=if(selected||focused) Color.White else Color(0xFFCFCFCF),fontSize=12.sp,fontWeight=if(selected||focused) FontWeight.ExtraBold else FontWeight.SemiBold)
                 Box(Modifier.padding(top=5.dp).size(24.dp,2.dp).background(if(selected||focused) Color.White else Color.Transparent))
             }
         }
@@ -79,37 +81,61 @@ object WatchHistory {
     var resume by remember {mutableStateOf<List<Channel>>(emptyList(),referentialEqualityPolicy())}
     LaunchedEffect(uiKey(s.channels),s.providers,s.hidden,s.hiddenGroups,s.locked,s.prefs.lockedSections,catalogOpen) {
         if(!catalogOpen) return@LaunchedEffect
-        val shelves=withContext(Dispatchers.Default) {HomeRecommendations.featured(a.store.visible(),allowed={it.id !in s.locked && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections})}
+        val shelves=withContext(Dispatchers.Default) {HomeRecommendations.featured(a.store.visible(),allowed={it.id !in s.locked && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections},ranks=Curated.ranks(s.channels))}
         computed=shelves
         a.store.saveHome(shelves)
     }
     LaunchedEffect(uiKey(s.channels),s.recent,s.positions,s.providers,s.hidden,s.hiddenGroups,s.locked,s.prefs.lockedSections) {resume=withContext(Dispatchers.Default) {WatchHistory.resume(s)}}
     // Until the catalog opens, last launch's shelves appear instantly (still honoring current locks).
     val shelves=computed ?: remember(cached,s.locked,s.hidden,s.prefs.lockedSections) {cached.filter {it.id !in s.locked && it.id !in s.hidden && (if(it.kind==Kind.MOVIE) "Movies" else "Series") !in s.prefs.lockedSections}}
-    val chosen=shelves.hero ?: resume.firstOrNull()
-    var hero by remember(chosen?.id) {mutableStateOf(chosen)}
-    LaunchedEffect(chosen?.id) {val c=chosen?:return@LaunchedEffect;val p=s.providers.firstOrNull {it.id==c.provider}?:return@LaunchedEffect;if(c.kind==Kind.MOVIE) runCatching {withContext(Dispatchers.IO){Sources.details(p,c)}}.onSuccess {hero=it.takeIf {value->if(resume.any {it.id==c.id}) WatchHistory.allowed(value,s) else HomeRecommendations.isEligible(value) || HomeRecommendations.isFeatured(value)}}}
-    LazyColumn(Modifier.fillMaxSize().background(Ink).padding(top=66.dp),contentPadding=PaddingValues(bottom=28.dp)) {
-        hero?.let {c->item {
-            Box(Modifier.fillMaxWidth().height(300.dp)) {
-                Art(c.backdrop.ifBlank {c.logo},Modifier.fillMaxSize())
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Black.copy(.96f),Color.Black.copy(.65f),Color.Transparent))))
-                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(.10f),.65f to Color.Transparent,1f to Color.Black)))
-                Column(Modifier.align(Alignment.CenterStart).padding(start=38.dp).width(440.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    if(HomeRecommendations.isFeatured(c)) Text("FEATURED FOR KIDS & FAMILY",color=LocalAccent.current,fontSize=10.sp,fontWeight=FontWeight.Bold,letterSpacing=1.5.sp)
-                    Text(if(c.kind==Kind.EPISODE) c.group else HomeRecommendations.title(c),fontSize=33.sp,lineHeight=37.sp,fontWeight=FontWeight.Bold,color=Color.White,maxLines=2,overflow=TextOverflow.Ellipsis)
-                    Text(listOf(c.year.take(4),c.certification,if(c.kind==Kind.MOVIE) "Movie" else "Series").filter {it.isNotBlank()}.joinToString("   ·   "),color=Color(0xFFCCCCCC),fontSize=11.sp)
-                    if(c.description.isNotBlank()) Text(c.description,color=Color(0xFFDDDDDD),fontSize=12.sp,lineHeight=18.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
-                    Row(horizontalArrangement=Arrangement.spacedBy(9.dp)) {
+    // Up to six heroes rotate like a streaming service's billboard; artwork details load once per title.
+    val heroes=remember(shelves,resume) {(shelves.popular.take(4)+shelves.shows.take(1)+shelves.classics.take(1)).ifEmpty {listOfNotNull(shelves.hero?:resume.firstOrNull())}}
+    var heroIndex by remember(heroes) {mutableIntStateOf(0)}
+    var heroFocused by remember {mutableStateOf(false)}
+    val details=remember {mutableStateMapOf<String,Channel>()}
+    LaunchedEffect(heroes,heroFocused) {if(heroes.size>1 && !heroFocused) while(true){delay(9000);heroIndex=(heroIndex+1)%heroes.size}}
+    LaunchedEffect(heroes) {
+        for(c in heroes) {
+            if(c.id in details || c.kind!=Kind.MOVIE) continue
+            val p=s.providers.firstOrNull {it.id==c.provider}?:continue
+            runCatching {withContext(Dispatchers.IO){Sources.details(p,c)}}.onSuccess {full->if(HomeRecommendations.isEligible(full) || HomeRecommendations.isFeatured(full)) details[c.id]=full}
+        }
+    }
+    val hero=heroes.getOrNull(heroIndex)?.let {details[it.id]?:it}
+    val screenHeight=androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+    val motion=LocalMotion.current
+    LazyColumn(Modifier.fillMaxSize().background(Ink),contentPadding=PaddingValues(bottom=28.dp)) {
+        hero?.let {c->item(key="hero") {
+            Box(Modifier.fillMaxWidth().height(screenHeight*.80f)) {
+                val art=c.backdrop.takeIf(::hasArt)?:c.logo
+                if(motion) androidx.compose.animation.Crossfade(art,animationSpec=androidx.compose.animation.core.tween(700),label="hero art") {url->Art(url,Modifier.fillMaxSize(),Alignment.TopEnd)}
+                else Art(art,Modifier.fillMaxSize(),Alignment.TopEnd)
+                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black.copy(.94f),.33f to Color.Black.copy(.62f),.62f to Color.Transparent)))
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Black.copy(.45f),.22f to Color.Transparent,.62f to Color.Transparent,1f to Ink)))
+                Column(Modifier.align(Alignment.BottomStart).padding(start=46.dp,bottom=44.dp).width(470.dp),verticalArrangement=Arrangement.spacedBy(11.dp)) {
+                    Text(if(c.kind==Kind.SERIES) "FEATURED SERIES" else if(HomeRecommendations.isFeatured(c)) "FEATURED FOR KIDS & FAMILY" else "FEATURED",color=Color.White,fontSize=10.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.8.sp,
+                        modifier=Modifier.clip(RoundedCornerShape(3.dp)).background(LocalAccent.current).padding(horizontal=8.dp,vertical=4.dp))
+                    Text(HomeRecommendations.title(if(c.kind==Kind.EPISODE) c.copy(name=c.group) else c),fontSize=44.sp,lineHeight=47.sp,fontWeight=FontWeight.ExtraBold,color=Color.White,maxLines=2,overflow=TextOverflow.Ellipsis,
+                        style=androidx.compose.ui.text.TextStyle(shadow=Shadow(Color.Black.copy(.6f),androidx.compose.ui.geometry.Offset(0f,2f),8f)))
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                        if(c.certification.isNotBlank()) Text(c.certification.uppercase(),color=Color.White,fontSize=10.sp,fontWeight=FontWeight.Bold,modifier=Modifier.border(1.dp,Color.White.copy(.7f),RoundedCornerShape(3.dp)).padding(horizontal=6.dp,vertical=2.dp))
+                        Text(listOf(c.year.take(4),if(c.kind==Kind.MOVIE) "Movie" else "Series",c.genre.split(',','/').firstOrNull()?.trim().orEmpty()).filter {it.isNotBlank()}.joinToString("  •  "),color=Color(0xFFE0E0E0),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
+                    }
+                    if(c.description.isNotBlank()) Text(c.description,color=Color(0xFFE6E6E6),fontSize=12.5.sp,lineHeight=19.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
+                    Row(Modifier.onFocusChanged {heroFocused=it.hasFocus}.padding(top=4.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
                         EzButton(if((s.positions[c.id]?:0)>0) "Resume" else "Play",Icons.Outlined.PlayArrow,primary=true,onClick={if(c.kind==Kind.SERIES) onDetails(c) else a.play(c)})
                         EzButton("More info",Icons.Outlined.Info,onClick={onDetails(c)})
                     }
                 }
+                if(heroes.size>1) Row(Modifier.align(Alignment.BottomEnd).padding(end=46.dp,bottom=54.dp),horizontalArrangement=Arrangement.spacedBy(6.dp),verticalAlignment=Alignment.CenterVertically) {
+                    heroes.indices.forEach {i->Box(Modifier.height(5.dp).width(if(i==heroIndex) 22.dp else 7.dp).clip(RoundedCornerShape(50)).background(if(i==heroIndex) Color.White else Color.White.copy(.4f)))}
+                }
             }
         }}
+        if(hero==null) item {Spacer(Modifier.height(84.dp))}
         if(resume.isNotEmpty()) item {
-            Column(Modifier.padding(top=if(hero==null) 24.dp else 4.dp,bottom=8.dp)) {
-                Text("Continue Watching",fontSize=17.sp,fontWeight=FontWeight.SemiBold,color=Color.White,modifier=Modifier.padding(horizontal=28.dp,vertical=10.dp))
+            Column(Modifier.padding(top=0.dp,bottom=8.dp)) {
+                Text("Continue Watching",fontSize=18.sp,fontWeight=FontWeight.Bold,color=Color.White,modifier=Modifier.padding(horizontal=28.dp,vertical=10.dp))
                 LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {items(resume,key={it.id}) {c->Poster(c,favorite=c.id in s.favorites,onClick={a.play(c)})}}
             }
         }

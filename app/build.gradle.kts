@@ -6,8 +6,8 @@ android {
         applicationId = "tv.ezano.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.4.0"
+        versionCode = 13
+        versionName = "0.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Fire TV and Android TV devices are ARM; skipping x86 speech libraries keeps the download small.
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
@@ -39,6 +39,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Installs the Compose/Media3 startup profiles on sideloaded installs, which never get Play's cloud profiles.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("androidx.media3:media3-exoplayer:1.8.1")

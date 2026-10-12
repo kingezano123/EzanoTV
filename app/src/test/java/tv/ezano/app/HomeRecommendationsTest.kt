@@ -52,5 +52,7 @@ class HomeRecommendationsTest {
         assertEquals("WALL-E",t("WALL-E"))
         assertEquals("Spider-Man: Into the Spider-Verse",t("[EN] Spider-Man: Into the Spider-Verse (2018)"))
         assertEquals("Up",t("Up"))
+        assertEquals("Henry Danger",t("ENI Henry Danger"))
+        assertEquals("Enigma",t("Enigma"))
     }
 }

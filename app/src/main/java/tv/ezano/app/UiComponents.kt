@@ -41,21 +41,22 @@ val LocalMotion=staticCompositionLocalOf { true }
     }
 }
 @Composable fun Tag(text: String,color: Color=LocalAccent.current) { Text(text,color=color,fontSize=9.sp,fontWeight=FontWeight.Bold,letterSpacing=1.sp,modifier=Modifier.clip(RoundedCornerShape(50)).background(color.copy(.13f)).padding(horizontal=7.dp,vertical=4.dp)) }
-@Composable fun Heading(title: String,subtitle: String="") { Column(Modifier.padding(bottom=16.dp)) { Text(title,color=Color.White,style=MaterialTheme.typography.headlineLarge,fontSize=27.sp); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.padding(top=6.dp)) } }
-@Composable fun Art(model: Any?,modifier: Modifier=Modifier) { Box(modifier.background(Panel)) { if(model!=null && model!="" && model!="file:///android_asset/hero.png") AsyncImage(model,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop) } }
+@Composable fun Heading(title: String,subtitle: String="") { Column(Modifier.padding(bottom=16.dp)) { Text(title,color=Color.White,style=MaterialTheme.typography.headlineLarge,fontSize=28.sp,fontWeight=FontWeight.ExtraBold); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,style=MaterialTheme.typography.bodyMedium,modifier=Modifier.padding(top=6.dp)) } }
+internal fun hasArt(url: String)=url.isNotBlank() && url!="null"
+@Composable fun Art(model: Any?,modifier: Modifier=Modifier,alignment: Alignment=Alignment.Center) { Box(modifier.background(Panel)) { if(model!=null && model!="" && model!="null" && model!="file:///android_asset/hero.png") AsyncImage(model,contentDescription=null,modifier=Modifier.fillMaxSize(),contentScale=ContentScale.Crop,alignment=alignment) } }
 @Composable fun Poster(c: Channel,sub: String="",favorite: Boolean=false,portrait: Boolean=false,onFocus: ()->Unit={},onClick: ()->Unit) {
     var focused by remember { mutableStateOf(false) }; val scale by animateFloatAsState(if(focused && LocalMotion.current) 1.035f else 1f,label="poster")
     Column(Modifier.width(if(portrait) 118.dp else 205.dp).graphicsLayer { scaleX=scale; scaleY=scale }.onFocusChanged { focused=it.isFocused; if(it.isFocused) onFocus() }.clip(RoundedCornerShape(5.dp)).background(Color.Transparent).border(if(focused) 2.dp else 0.dp,if(focused) Color.White else Color.Transparent,RoundedCornerShape(5.dp)).clickable(role=Role.Button,onClick=onClick).padding(3.dp)) {
         Box(Modifier.fillMaxWidth().height(if(portrait) 168.dp else 110.dp).clip(RoundedCornerShape(4.dp))) {
-            Art(c.logo.ifBlank { c.backdrop },Modifier.fillMaxSize())
-            if(c.logo.isBlank() && c.backdrop.isBlank()) Text(if(c.kind==Kind.SERIES) "SERIES" else if(c.kind==Kind.LIVE) "LIVE TV" else "EZANO CINEMA",color=Muted.copy(.6f),fontSize=10.sp,letterSpacing=2.sp,modifier=Modifier.align(Alignment.Center))
+            Art(c.logo.takeIf(::hasArt) ?: c.backdrop,Modifier.fillMaxSize())
+            if(!hasArt(c.logo) && !hasArt(c.backdrop)) Text(if(c.kind==Kind.SERIES) "SERIES" else if(c.kind==Kind.LIVE) "LIVE TV" else "EZANO CINEMA",color=Muted.copy(.6f),fontSize=10.sp,letterSpacing=2.sp,modifier=Modifier.align(Alignment.Center))
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent,Color.Transparent,Ink.copy(.85f)))))
             if(c.kind==Kind.LIVE) Box(Modifier.padding(8.dp).align(Alignment.BottomStart)) { Tag("● LIVE",Color(0xFFFF6D7A)) }
             if(favorite) Text("★",color=LocalAccent.current,modifier=Modifier.align(Alignment.TopEnd).padding(9.dp),fontSize=15.sp)
         }
         // Movie and series names are often much longer than channel names. Reserve two
         // readable lines so they don't disappear behind a one-line ellipsis or jump in height.
-        Text(if(c.kind==Kind.EPISODE) c.group else HomeRecommendations.title(c),color=Color.White,fontSize=11.sp,lineHeight=14.sp,fontWeight=FontWeight.Medium,minLines=1,maxLines=2,overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth().padding(start=3.dp,top=7.dp,end=3.dp))
+        Text(HomeRecommendations.title(if(c.kind==Kind.EPISODE) c.copy(name=c.group) else c),color=Color.White,fontSize=11.5.sp,lineHeight=14.sp,fontWeight=FontWeight.SemiBold,minLines=1,maxLines=2,overflow=TextOverflow.Ellipsis,modifier=Modifier.fillMaxWidth().padding(start=3.dp,top=7.dp,end=3.dp))
         Text(sub.ifBlank {if(c.kind==Kind.EPISODE) c.name.substringBefore("  ") else c.year.take(4)},color=Muted,fontSize=8.sp,maxLines=1,overflow=TextOverflow.Ellipsis,modifier=Modifier.padding(start=3.dp,top=3.dp,bottom=5.dp,end=3.dp))
     }
 }

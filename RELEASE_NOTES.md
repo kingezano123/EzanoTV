@@ -1,29 +1,30 @@
-Ezano TV 0.4.0 opens in seconds, puts famous kids movies on Home, and adds free live captions.
+Ezano TV 0.5.0 brings a full-screen Home, popular titles at the front of Movies and Shows, a black subtitle background option, and smoother performance on more TV sticks.
 
-**Download Ezano-TV.apk below** · Android 8+ · package `tv.ezano.app` · version code 12.
+**Download Ezano-TV.apk below** · Android 8+ · package `tv.ezano.app` · version code 13.
 
-> **Reinstall required:** this release is signed with a new key, because the key that signed 0.3.x is not available. Android cannot install it over 0.3.1. To keep your favorites and progress: in 0.3.1 open **Settings → Back up your library**, then uninstall Ezano, install this APK and use **Settings → Restore a backup**. Or simply re-add your playlist under **Playlists**. The next update may need the same reinstall, so keep a recent backup.
+> **Signed with the original Ezano key.** This release installs directly over **0.3.x** and keeps your library. If you installed **0.4.0** (one-off key), uninstall it once first. To keep favorites and progress, use **Settings → Back up your library** in 0.4.0, then **Settings → Restore a backup** in 0.5.0. From 0.5.0 on, updates install over each other.
 
-### Fast startup
-- The saved library is no longer decrypted through the TV's secure hardware in thousands of small steps. Only one small key goes through it per launch. The rest is decrypted in software, which on Fire TV turns minutes into a few seconds.
-- The library is split into small parts. Your settings, playlists and Home open first, and channels, movies, shows and the guide load behind them. Favoriting a title or saving watch progress now writes a few kilobytes instead of re-saving the entire catalog.
-- Home appears instantly with last time's shelves while everything else opens.
-- The loading screen never asks you to close the app. The first launch after updating from 0.3.x converts the old library once and shows a percentage; later launches are fast.
-- The guide search index is reused when the guide hasn't changed, and is built after startup instead of during it.
+### Home that fills the screen
+- A full-screen featured billboard, like the big streaming apps: edge-to-edge artwork, a large bold title, rating/year/genre, Play and More info.
+- It rotates through the top featured titles every few seconds, with dot indicators, and pauses while you're on its buttons.
+- The navigation bar floats over the artwork, and the first row peeks in from the bottom.
+- Continue Watching shows the show's artwork for episodes that had none, and titles drop provider tags such as "ENI".
 
-### Home: famous kids & family titles
-- Home now leads with the biggest English kids and family films your provider carries, newest first: Toy Story 5, Minions & Monsters (Minions 3), The Super Mario Galaxy Movie, Hoppers, Moana (2026), Zootopia 2, Lilo & Stitch, KPop Demon Hunters, A Minecraft Movie and more.
-- Rows: Popular kids movies, Kids & family shows (Bluey, Peppa Pig, PAW Patrol, Gabby's Dollhouse…), Family classics and More family movies & shows. Only G/PG titles and kids TV are in the curated list. Foreign-language copies, locked, hidden and mature titles never appear, and the best English copy of each title is chosen.
-- Titles display cleanly, without provider tags like "EN -", "[UK]", "4K" or "(2026)".
+### Movies & Shows lead with what people actually watch
+- The front rows now show popular, recognisable US titles your provider carries, newest first:
+  - Movies: Popular movies, New releases, Superheroes (Marvel & DC), Action & adventure, Comedy, Sci-fi & fantasy, Drama, Crime & thrillers, Kids & family.
+  - Shows: Popular shows, New & trending, Superhero shows (e.g. The Flash), Comedy, Drama, Reality & competition, Kids & family.
+- Front rows only use curated titles rated up to PG-13 / TV-14. Adult, horror and foreign-language copies stay off them, but remain reachable through Categories and Search.
 
-### Live captions (free, on-device)
-- **Audio & subtitles → Live captions** (or **Settings → Live captions**): one button downloads a 40 MB English speech model once and turns captions on. They work on any channel, movie or show, appear about a second after speech, and need no account or internet after setup. No audio leaves the TV.
-- Captions start with the video, pause automatically when the stream has real subtitles, and stay on across channel changes without reloading.
-- When the audio isn't English, low-confidence recognition is hidden instead of showing nonsense words.
+### Subtitles
+- **Caption background: Clear / Black.** In **Audio & subtitles** or **Settings**, show subtitles and live captions on a black box for bright or busy scenes.
 
-### Playback
-- Live channels reconnect automatically after a dropped connection, and jump back to live if they fall behind.
-- Streams that redirect from http to https now play.
-- Smaller download: only ARM (Fire TV / Android TV) native libraries are included.
+### Faster on every TV stick
+- Bundled startup profiles are now installed on sideloaded devices, so screens open and scroll more smoothly from the first launch.
+- Posters are cached on disk across launches, even when the provider tells the TV not to cache them, so rows fill instantly instead of re-downloading.
+- Low-memory sticks use lighter images, skip focus animations and get more memory headroom for large catalogs.
 
-Built and unit-tested on GitHub Actions. Startup time on a physical Fire TV still needs confirming on your device.
+### Polish
+- Bolder headings, row titles, navigation and poster titles.
+
+Built and unit-tested on GitHub Actions; the APK is verified against the original Ezano certificate before publishing.

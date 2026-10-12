@@ -26,7 +26,9 @@ import java.time.format.DateTimeFormatter
     var providerModal by remember { mutableStateOf(false) }; var details by remember { mutableStateOf<Channel?>(null) }; var program by remember { mutableStateOf<Pair<Channel,Program>?>(null) }; var exit by remember { mutableStateOf(false) }
     LaunchedEffect(a.playing?.id) {if(a.playing!=null){details=null;program=null}}
     val accent=if(s.prefs.accent=="white") Color.White else Lime
-    MaterialTheme(colorScheme=darkColorScheme(primary=accent,background=Ink,surface=Panel,onSurface=Color.White),typography=EzanoTypography) { CompositionLocalProvider(LocalAccent provides accent,LocalMotion provides !s.prefs.reduceMotion) {
+    // Entry-level sticks skip focus-scale animations, which otherwise cost frames while scrolling rows.
+    val lowRam=remember {(a.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice}
+    MaterialTheme(colorScheme=darkColorScheme(primary=accent,background=Ink,surface=Panel,onSurface=Color.White),typography=EzanoTypography) { CompositionLocalProvider(LocalAccent provides accent,LocalMotion provides (!s.prefs.reduceMotion && !lowRam)) {
         if(!ready) {StartupRecovery(a);return@CompositionLocalProvider}
         val movieSearchFocus = remember { FocusRequester() }
         BackHandler { when { a.fullPlayer -> a.browsePlayback(); a.page!="Home" -> a.page="Home"; else ->exit=true } }
@@ -59,7 +61,7 @@ import java.time.format.DateTimeFormatter
 }
 @Composable fun ContentRow(title: String,items: List<Channel>,favorites: Set<String>,onDetails: (Channel)->Unit,subtitle: String="",portrait: Boolean=false) {
     if(items.isEmpty()) return
-    Column(Modifier.padding(top=10.dp,bottom=6.dp)) { Row(Modifier.padding(start=28.dp,end=28.dp,bottom=8.dp),verticalAlignment=Alignment.CenterVertically) { Text(title,fontSize=17.sp,color=Color.White,fontWeight=FontWeight.SemiBold); Spacer(Modifier.weight(1f)); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,fontSize=10.sp) }; LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) { items(items,key={it.id}) {c->Poster(c,favorite=c.id in favorites,portrait=portrait,onClick={onDetails(c)})} } }
+    Column(Modifier.padding(top=10.dp,bottom=6.dp)) { Row(Modifier.padding(start=28.dp,end=28.dp,bottom=8.dp),verticalAlignment=Alignment.CenterVertically) { Text(title,fontSize=18.sp,color=Color.White,fontWeight=FontWeight.Bold); Spacer(Modifier.weight(1f)); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,fontSize=10.sp) }; LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) { items(items,key={it.id}) {c->Poster(c,favorite=c.id in favorites,portrait=portrait,onClick={onDetails(c)})} } }
 }
 @Composable fun EmptyState(title: String,body: String,onConnect: ()->Unit) { Column(Modifier.fillMaxWidth().padding(vertical=40.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)) { Icon(Icons.Outlined.Tv,null,Modifier.size(43.dp),tint=LocalAccent.current); Text(title,fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=Color.White); Text(body,fontSize=12.sp,color=Muted); EzButton("Manage playlists",primary=true,onClick=onConnect) } }
 @Composable fun SavedScreen(a: MainActivity,onDetails: (Channel)->Unit) {

@@ -79,9 +79,12 @@ object HomeRecommendations {
     // Provider decorations: "EN - ", "[EN] ", "|UK| ", "4K-EN - " prefixes and quality/year suffixes.
     private val titlePrefix = Regex("^(?:\\[[^\\]]{1,10}]|\\|[^|]{1,10}\\||\\([A-Za-z]{2,3}\\)|[A-Z0-9+]{1,6}(?:-[A-Z0-9+]{1,6})?\\s*[|:]|[A-Z0-9+]{1,6}(?:-[A-Z0-9+]{1,6})?\\s+[-–]\\s)\\s*")
     private val titleSuffix = Regex("(?i)\\s*(?:[\\[(](?:[^\\])]*\\b(?:4k|uhd|fhd|hd|hevc|multi|sub|subs|dub|dubbed|(?:19|20)\\d{2})\\b[^\\])]*)[\\])]|[-–|]?\\s*\\b(?:4k|uhd|fhd|hd|sd|hdr|hevc|h\\.?26[45]|x26[45]|1080p|720p|2160p|multi(?:-?subs?)?|dubbed)\\b|\\s[-–]\\s*(?:19|20)\\d{2}|\\s(?:19|20)\\d{2})\\s*$")
+    private fun String.removePrefixWord(word: String)=if(startsWith("$word ") && length>word.length+2) substring(word.length+1).trim() else null
     fun title(c: Channel): String {
         var name=c.name.trim()
         repeat(3) {val next=titlePrefix.replaceFirst(name,"").trim();if(next.length>=2) name=next}
+        // Some providers mark English titles "ENI Henry Danger" with no separator.
+        name.removePrefixWord("ENI")?.let {name=it}
         repeat(4) {val next=titleSuffix.replace(name,"").trim();if(next.length>=2) name=next}
         return name
     }
@@ -92,7 +95,9 @@ object HomeRecommendations {
      * first (see FeaturedTitles), then the provider's best-rated family titles. One pass over resident labels;
      * only the chosen titles are decoded. Locked, hidden, mature and non-English copies never appear.
      */
-    fun featured(channels: List<Channel>, allowed: (CatalogLabel) -> Boolean = { true }): HomeSnapshot {
+    fun featured(channels: List<Channel>, allowed: (CatalogLabel) -> Boolean = { true }, ranks: CuratedRanks? = null): HomeSnapshot {
+        val kidsRank: (CatalogLabel) -> Int = if(ranks!=null) {label -> ranks.kids[label.id] ?: -1}
+            else {label -> if(label.kind==Kind.MOVIE) FeaturedTitles.movieRank(label.name,label.year) else FeaturedTitles.showRank(label.name,label.year)}
         val movies=HashMap<Int,Int>(); val shows=HashMap<Int,Int>()
         fun better(a: CatalogLabel, b: CatalogLabel) = compareValuesBy(a,b,{it.englishRank},{!it.familyEligible},{it.name.length}) < 0
         for(index in channels.indices) {
@@ -100,7 +105,7 @@ object HomeRecommendations {
             if((label.kind!=Kind.MOVIE && label.kind!=Kind.SERIES) || label.englishRank>2 || !allowed(label)) continue
             if(adult.containsMatchIn("${label.name} ${label.group} ${label.genre}")) continue
             val movie=label.kind==Kind.MOVIE
-            val rank=if(movie) FeaturedTitles.movieRank(label.name,label.year) else FeaturedTitles.showRank(label.name,label.year)
+            val rank=kidsRank(label)
             if(rank<0) continue
             // One-word titles ("Frozen", "Soul") need a year or a family label to be the famous film.
             if(label.year.isBlank() && FeaturedTitles.yearIn(label.name)==null && ' ' !in FeaturedTitles.normalize(label.name)

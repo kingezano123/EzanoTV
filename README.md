@@ -1,14 +1,21 @@
-# Ezano TV 0.4.0
+# Ezano TV 0.5.0
 
 A native Android TV / Fire TV IPTV player with a black, content-first interface, remote navigation, movie/show shelves, and a cable-style live guide. Android 8 or later.
 
 ## Install and watch
 
-[Download the signed APK](https://github.com/kingezano123/EzanoTV/releases/latest/download/Ezano-TV.apk). 0.4.0 uses a new signing key, so uninstall 0.3.x first. To keep your favorites and progress, back up in 0.3.x (Settings → Back up your library) and restore in 0.4.0. Until the repository signing secrets are configured, each release is signed with a one-off key and also needs a reinstall.
+[Download the signed APK](https://github.com/kingezano123/EzanoTV/releases/latest/download/Ezano-TV.apk). 0.5.0 is signed with the original Ezano key and installs over 0.3.x. Only 0.4.0 used a one-off key: uninstall it once (back up first in Settings), and later releases install over 0.5.0.
 
 Open Playlists → Add playlist and enter your own Xtream Codes or M3U details. Credentials remain encrypted on the device. No commercial subscriptions, channels, or catalog are bundled.
 
-## This update
+## This update (0.5.0)
+
+- Full-screen, rotating Home billboard with a floating navigation bar.
+- Movies and Shows open with curated popular US titles (`PopularTitles.kt`, up to PG-13 / TV-14) grouped by genre, then kids favourites; adult and horror titles stay off the front rows.
+- Caption background option (clear or black box) for subtitles and live captions.
+- Sideloaded startup profiles (profileinstaller), persistent artwork disk cache, low-RAM tuning, bolder typography.
+
+## 0.4.0
 
 - **Opens in seconds.** Library sections are encrypted with a software data key that the Android Keystore wraps once per launch, instead of one Keystore operation per 64 KB. Settings, playlists and Home open first; the catalog and guide load behind them. Saves rewrite only the changed section. The loading screen never asks you to close the app; the one-time upgrade from 0.3.x shows its progress.
 - **Famous kids & family titles on Home.** A curated, release-date-checked list (`FeaturedTitles.kt`) of about 160 G/PG films and 70 kids shows is matched against your catalog, newest blockbusters first (Toy Story 5, Minions & Monsters, The Super Mario Galaxy Movie, Zootopia 2…). The best English copy of each title is used; locked, hidden, mature and foreign-language copies are skipped.

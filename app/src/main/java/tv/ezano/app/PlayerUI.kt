@@ -23,12 +23,16 @@ import androidx.media3.ui.*
 import kotlinx.coroutines.*
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-@Composable fun VideoSurface(p: ExoPlayer,modifier: Modifier=Modifier,controls: Boolean=true,seconds: Int=7,resize: Int=AspectRatioFrameLayout.RESIZE_MODE_FIT,controlsVisible: Boolean?=null) {
+/** Subtitles are white with a shadow, or white on a black box for busy or bright scenes. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+internal fun captionStyle(boxed: Boolean)=CaptionStyleCompat(android.graphics.Color.WHITE,if(boxed)0xD9000000.toInt() else android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT,if(boxed)CaptionStyleCompat.EDGE_TYPE_NONE else CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,android.graphics.Color.BLACK,android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL))
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+@Composable fun VideoSurface(p: ExoPlayer,modifier: Modifier=Modifier,controls: Boolean=true,seconds: Int=7,resize: Int=AspectRatioFrameLayout.RESIZE_MODE_FIT,controlsVisible: Boolean?=null,boxedCaptions: Boolean=false) {
     AndroidView(factory={ctx->PlayerView(ctx).apply {
         player=p;useController=false;resizeMode=resize;setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
         isFocusable=false;isFocusableInTouchMode=false;setKeepContentOnPlayerReset(true)
-        subtitleView?.apply {setApplyEmbeddedStyles(false);setApplyEmbeddedFontSizes(false);setFractionalTextSize(.036f);setStyle(CaptionStyleCompat(android.graphics.Color.WHITE,android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT,CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,android.graphics.Color.BLACK,android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)))}
-    }},update={v->v.player=p;v.resizeMode=resize;v.useController=false;v.subtitleView?.apply {val density=v.resources.displayMetrics.density;setPadding((28*density).toInt(),0,(28*density).toInt(),((if(controlsVisible==true)104 else 40)*density).toInt());setBottomPaddingFraction(.075f)}},onRelease={it.player=null},modifier=modifier)
+        subtitleView?.apply {setApplyEmbeddedStyles(false);setApplyEmbeddedFontSizes(false);setFractionalTextSize(.036f);setStyle(captionStyle(boxedCaptions))}
+    }},update={v->v.player=p;v.resizeMode=resize;v.useController=false;v.subtitleView?.apply {setStyle(captionStyle(boxedCaptions));val density=v.resources.displayMetrics.density;setPadding((28*density).toInt(),0,(28*density).toInt(),((if(controlsVisible==true)104 else 40)*density).toInt());setBottomPaddingFraction(.075f)}},onRelease={it.player=null},modifier=modifier)
 }
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable fun PreviewVideo(a: MainActivity,c: Channel) {
@@ -71,7 +75,7 @@ private fun playbackTime(ms: Long): String {val sec=(ms.coerceAtLeast(0)/1000);r
     LaunchedEffect(p,a.speech){var lastPosition=-1L;while(true){val now=p.currentPosition;val engine=a.speech;engine?.playheadMs=now;if(p.isPlaying || kotlin.math.abs(now-lastPosition)>250 || engine?.enabled!=true)speechText=engine?.captionAt(now).orEmpty();lastPosition=now;delay(100)}}
     LaunchedEffect(activeAudio){p.volume=if(activeAudio==c.id)1f else 0f}
     Box(Modifier.fillMaxSize().background(Color.Black).clickable {a.showPlayerControls()}) {
-        if(multi.isEmpty())VideoSurface(p,Modifier.fillMaxSize(),false,resize=resize,controlsVisible=toolsVisible && !dialogOpen)
+        if(multi.isEmpty())VideoSurface(p,Modifier.fillMaxSize(),false,resize=resize,controlsVisible=toolsVisible && !dialogOpen,boxedCaptions=s.prefs.subtitleBackground)
         else Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             (listOf(c)+multi).chunked(2).forEach {row->Row(Modifier.weight(1f),horizontalArrangement=Arrangement.spacedBy(4.dp)){row.forEach {tile->Box(Modifier.weight(1f).fillMaxHeight().border(1.dp,if(toolsVisible && activeAudio==tile.id)Color.White else Color.Transparent).clickable {a.showPlayerControls();activeAudio=tile.id}){if(tile.id==c.id)VideoSurface(p,Modifier.fillMaxSize(),false)else MultiVideo(a,tile,activeAudio==tile.id);if(toolsVisible)Text(tile.name,color=Color.White,fontSize=11.sp,modifier=Modifier.align(Alignment.TopStart).background(Color.Black.copy(.65f)).padding(7.dp))}};if(row.size==1)Spacer(Modifier.weight(1f))}}
         }
@@ -97,11 +101,19 @@ private fun playbackTime(ms: Long): String {val sec=(ms.coerceAtLeast(0)/1000);r
                 }
             }
         }
-        if(speechText.isNotBlank())Text(speechText,color=Color.White,fontSize=20.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.Medium,textAlign=androidx.compose.ui.text.style.TextAlign.Center,maxLines=2,style=androidx.compose.ui.text.TextStyle(shadow=Shadow(Color.Black,androidx.compose.ui.geometry.Offset(1f,2f),5f)),modifier=Modifier.align(Alignment.BottomCenter).fillMaxWidth(.72f).padding(bottom=speechBottom))
+        if(speechText.isNotBlank()){
+            val boxed=s.prefs.subtitleBackground
+            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth(.76f).padding(bottom=speechBottom),contentAlignment=Alignment.BottomCenter){
+                Text(speechText,color=Color.White,fontSize=20.sp,lineHeight=27.sp,fontWeight=androidx.compose.ui.text.font.FontWeight.SemiBold,textAlign=androidx.compose.ui.text.style.TextAlign.Center,maxLines=2,
+                    style=androidx.compose.ui.text.TextStyle(shadow=if(boxed)null else Shadow(Color.Black,androidx.compose.ui.geometry.Offset(1f,2f),5f)),
+                    modifier=if(boxed)Modifier.background(Color.Black.copy(.85f),RoundedCornerShape(4.dp)).padding(horizontal=12.dp,vertical=5.dp) else Modifier)
+            }
+        }
         if(status.isNotBlank())Column(Modifier.align(Alignment.Center).width(420.dp).background(Panel,RoundedCornerShape(4.dp)).padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){Text(status,color=Color.White,fontSize=14.sp);Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){EzButton("Retry",primary=true,onClick={status="";p.prepare();p.play()});EzButton("Back",onClick={a.stopPlayback()})}}
     }
     if(captions)Modal("Audio & subtitles",{captions=false}){
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){EzButton("Audio",Icons.Outlined.VolumeUp,onClick={captions=false;tracks=C.TRACK_TYPE_AUDIO});EzButton("Subtitles",Icons.Outlined.Subtitles,onClick={captions=false;tracks=C.TRACK_TYPE_TEXT});EzButton(if(a.speechEnabled() && SpeechModel.installed(a))"Live captions: On" else "Live captions: Off",Icons.Outlined.ClosedCaption,onClick={captions=false;speechSetup=true})}
+        EzButton(if(s.prefs.subtitleBackground)"Caption background: Black" else "Caption background: Clear",onClick={a.store.update {it.copy(prefs=it.prefs.copy(subtitleBackground=!it.prefs.subtitleBackground))}})
         Text("English subtitles are detected from your stream and provider automatically. Live captions write English subtitles from the audio when a program has none.",color=Muted,fontSize=12.sp,lineHeight=17.sp)
         a.speech?.let {engine->val speechStatus by engine.status.collectAsState();Text(speechStatus,color=Muted,fontSize=11.sp)}
     }

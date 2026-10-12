@@ -134,7 +134,7 @@ import java.time.format.DateTimeFormatter
         else all.searchCatalog {(group.isEmpty() || it.group==group) && (provider.isEmpty() || it.provider==provider) && (settled.isEmpty() || it.name.contains(settled,true) || it.group.contains(settled,true)) && (regex==null || regex.containsMatchIn("${it.genre} ${it.group}"))}
     }
     val filtered=results.orEmpty()
-    val shelves by produceState<List<BrowseShelf>?>(null,uiKey(filtered)) {value=withContext(Dispatchers.Default) {BrowseShelves.build(filtered)}}
+    val shelves by produceState<List<BrowseShelf>?>(null,uiKey(filtered)) {value=withContext(Dispatchers.Default) {BrowseShelves.build(filtered,kind,Curated.ranks(a.store.state.value.channels))}}
     val gridState=rememberLazyGridState()
     val title=if(kind==Kind.MOVIE) "Movies" else "Shows"
     val shelfMode=settled.isEmpty() && group.isEmpty() && genre.isEmpty()
@@ -142,7 +142,7 @@ import java.time.format.DateTimeFormatter
     LaunchedEffect(a.page,a.focusCatalogSearch) {if(a.page==(if(kind==Kind.MOVIE) "Movies" else "Series") && a.focusCatalogSearch) {runCatching {searchFocus.requestFocus()};a.focusCatalogSearch=false}}
     Column(Modifier.fillMaxSize().padding(horizontal=30.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom=12.dp),horizontalArrangement=Arrangement.spacedBy(16.dp),verticalAlignment=Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {Text(title,fontSize=27.sp,color=Color.White,fontWeight=FontWeight.SemiBold);Text(if(catalog==null) "Opening your saved collection…" else "${all.size} ${if(kind==Kind.MOVIE) "movies" else "series"} in your collection",color=Muted,fontSize=10.sp,modifier=Modifier.padding(top=3.dp))}
+            Column(Modifier.weight(1f)) {Text(title,fontSize=28.sp,color=Color.White,fontWeight=FontWeight.ExtraBold);Text(if(catalog==null) "Opening your saved collection…" else "${all.size} ${if(kind==Kind.MOVIE) "movies" else "series"} in your collection",color=Muted,fontSize=10.sp,modifier=Modifier.padding(top=3.dp))}
             SectionSearchField("Search ${title.lowercase()}",query,{query=it},Modifier.width(300.dp),searchFocus)
             EzButton("Categories",Icons.Outlined.FilterList,onClick={categories=true})
         }
@@ -156,10 +156,11 @@ import java.time.format.DateTimeFormatter
             all.isEmpty() && busy -> LoadingCatalog("Loading your ${title.lowercase()}…")
             all.isEmpty() -> EmptyState("No ${title.lowercase()} yet","Your playlist's ${title.lowercase()} will appear here.") {a.pendingImport=true}
             filtered.isEmpty() -> NoSearchResults(settled) {query="";group="";genre="";provider=""}
+            shelfMode && shelves==null -> LoadingCatalog("Finding popular ${title.lowercase()}…")
             shelfMode -> LazyColumn(Modifier.weight(1f),contentPadding=PaddingValues(bottom=26.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 items(shelves.orEmpty(),key={it.title}) {shelf->
                     Column {
-                        Row(Modifier.fillMaxWidth().padding(vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {Text(shelf.title,color=Color.White,fontSize=18.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.weight(1f));BrowseChip("View all",false) {genre=shelf.filter.ifBlank {"__all"}}}
+                        Row(Modifier.fillMaxWidth().padding(vertical=9.dp),verticalAlignment=Alignment.CenterVertically) {Text(shelf.title,color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(1f));BrowseChip("View all",false) {genre=shelf.filter.ifBlank {"__all"}}}
                         LazyRow(contentPadding=PaddingValues(3.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)) {items(shelf.channels.size,key={shelf.channels.catalogLabel(it).id}) {index->CatalogPoster(shelf.channels,index,s.favorites,onDetails=onDetails)}}
                     }
                 }
@@ -240,7 +241,7 @@ import java.time.format.DateTimeFormatter
     val end = start + GUIDE_WINDOW_MS
     Column(Modifier.fillMaxSize().padding(horizontal = 26.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-            Column(Modifier.weight(1f)) { Text("Live TV", color = Color.White, fontSize = 27.sp, fontWeight = FontWeight.SemiBold); Text(if(catalog==null) "Opening your saved channels…" else "${all.size} channels · Your TV guide", color = Muted, fontSize = 10.sp) }
+            Column(Modifier.weight(1f)) { Text("Live TV", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold); Text(if(catalog==null) "Opening your saved channels…" else "${all.size} channels · Your TV guide", color = Muted, fontSize = 10.sp) }
             SectionSearchField(if(events) "Search events, teams, or shows" else "Search channels", query, { query = it }, Modifier.width(300.dp))
             BrowseChip("Channels", !events) {events=false;query=""}
             BrowseChip("Find event", events) {events=true;query=""}

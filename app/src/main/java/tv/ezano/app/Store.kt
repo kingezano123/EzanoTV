@@ -27,9 +27,22 @@ import kotlinx.coroutines.sync.withLock
 
 private val KEY_MAGIC="EZK1".toByteArray(Charsets.US_ASCII)
 
-class EzanoApp: Application() {
+class EzanoApp: Application(), coil.ImageLoaderFactory {
     lateinit var store: Store
     override fun onCreate() { super.onCreate(); store=Store(this) }
+    /** Artwork tuned for TV sticks: bounded memory, a persistent disk cache that ignores providers'
+     * no-cache headers (so posters are not re-downloaded every launch), and 16-bit bitmaps on low-RAM devices.
+     */
+    override fun newImageLoader(): coil.ImageLoader {
+        val lowRam=(getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager).isLowRamDevice
+        return coil.ImageLoader.Builder(this)
+            .memoryCache {coil.memory.MemoryCache.Builder(this).maxSizePercent(if(lowRam) .12 else .2).build()}
+            .diskCache {coil.disk.DiskCache.Builder().directory(cacheDir.resolve("artwork")).maxSizeBytes(300L*1024*1024).build()}
+            .respectCacheHeaders(false)
+            .allowRgb565(lowRam)
+            .crossfade(if(lowRam) 0 else 180)
+            .build()
+    }
 }
 class Store(private val context: Context) {
     val events = EventSearchIndex(context)

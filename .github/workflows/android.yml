@@ -6,6 +6,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+env:
+  # Public fingerprint of the original Ezano TV signing certificate (0.3.x, 0.5.0+). Not a secret.
+  EZANO_CERT_SHA256: 3beee9b145381faf84f202ac26755c4d489ee2a1ce847d449cca7d1cc22b9e73
+
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -60,6 +64,8 @@ jobs:
 
       - name: Package
         id: package
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           version="$(sed -n 's/.*versionName *= *"\([^"]*\)".*/\1/p' app/build.gradle.kts | head -1)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -69,6 +75,17 @@ jobs:
           cp "$apk" dist/Ezano-TV.apk
           cp "$apk" "dist/Ezano-TV-$version.apk"
           git archive --format=zip --prefix="ezano-tv/" -o "dist/Ezano-TV-source-$version.zip" HEAD
+          if [[ "$COMMIT_MESSAGE" == *"[release]"* && -f release/Ezano-TV.apk ]]; then
+            # A release commit carries the APK signed offline with the original key. Publish it only
+            # if its certificate and version match, so the release always installs over 0.3.x.
+            signed=release/Ezano-TV.apk
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$signed" | tee certs.txt
+            grep -qi "SHA-256 digest: $EZANO_CERT_SHA256" certs.txt || { echo "::error::release/Ezano-TV.apk is not signed with the Ezano key"; exit 1; }
+            "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$signed" | head -1 | tee badging.txt
+            grep -q "versionName='$version'" badging.txt || { echo "::error::release/Ezano-TV.apk is not version $version"; exit 1; }
+            cp "$signed" dist/Ezano-TV.apk
+            cp "$signed" "dist/Ezano-TV-$version.apk"
+          fi
           (cd dist && sha256sum *.apk *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
           ls -la dist
 
@@ -84,6 +101,29 @@ jobs:
           name: test-reports
           path: app/build/reports/tests/
           if-no-files-found: ignore
+
+  # A commit message containing [stage] posts the built APK to a temporary pre-release
+  # (never "latest") so it can be signed offline with the original key.
+  stage:
+    needs: build
+    if: contains(github.event.head_commit.message, '[stage]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ezano-tv-apk
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: staging
+          target_commitish: ${{ github.sha }}
+          name: Staging build (not for install)
+          body: Unsigned-for-release build of ${{ github.sha }} waiting to be signed. Install the latest release instead.
+          prerelease: true
+          make_latest: false
+          files: dist/Ezano-TV.apk
 
   release:
     needs: build
@@ -108,3 +148,8 @@ jobs:
           body_path: RELEASE_NOTES.md
           files: dist/*
           make_latest: true
+
+      - name: Remove the staging pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete staging --cleanup-tag --yes -R "${{ github.repository }}" || true
