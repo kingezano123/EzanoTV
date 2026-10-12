@@ -98,49 +98,69 @@ class EndToEndTest {
             }
             check(waitForObject(By.text("Connect your playlist"), 10_000) != null) { "Playlist editor did not open" }
             SystemClock.sleep(500)
-            var fields = device.findObjects(By.clazz("android.widget.EditText")).sortedBy { it.visibleBounds.top }
-            note("editor shows ${fields.size} text fields")
-            check(fields.size >= 4) { "Expected name, server, username and password fields; found ${fields.size}" }
-            fields[0].text = "Device fixture"
-            fields[1].text = DeviceCheck.FIXTURE_URL
-            fields = device.findObjects(By.clazz("android.widget.EditText")).sortedBy { it.visibleBounds.top }
-            fields[2].text = "test"
-            fields[3].text = "test"
-            route("e2e: fill Xtream form", "direct", "UiObject2.setText; no on-screen keyboard typing")
-            SystemClock.sleep(500)
-            note("keyboard shown after filling fields: ${DeviceCheck.imeShown()}; focus=${focused()}")
-            DeviceCheck.hideIme()
-            checks.check(has(By.text("Connect your playlist")), "Closing the keyboard with Back also closed the playlist editor")
+            note("editor shows ${device.findObjects(By.clazz("android.widget.EditText")).size} text fields; focus=${focused()}")
+            var touched = false
+            var keyboardTraps = 0
+            /** Remote flow per field: Down until the field has focus, Select to start typing, enter text, Back to close the keyboard. */
+            fun fill(label: String, value: String) {
+                var moves = 0
+                while (!focusedOn(label, prefix = true) && moves < 4) {
+                    if (DeviceCheck.imeShown()) { keyboardTraps++; device.pressBack(); SystemClock.sleep(500); step("keyboard open while moving -> Back; focus: ${focused()}") }
+                    else { press(KeyEvent.KEYCODE_DPAD_DOWN, 600); moves++ }
+                }
+                val byRemote = focusedOn(label, prefix = true)
+                if (byRemote) device.pressDPadCenter()
+                else {
+                    checks.check(false, "D-pad DOWN could not move focus to the \"$label\" field (focus: ${focused()})")
+                    (device.findObjects(By.clazz("android.widget.EditText")).firstOrNull { it.hasObject(By.textStartsWith(label)) } ?: throw AssertionError("No \"$label\" field on screen")).click()
+                    touched = true
+                }
+                SystemClock.sleep(600)
+                val keyboardOpened = DeviceCheck.imeShown()
+                val field = runCatching { device.findObject(By.clazz("android.widget.EditText").focused(true)) }.getOrNull()
+                    ?: device.findObjects(By.clazz("android.widget.EditText")).firstOrNull { it.hasObject(By.textStartsWith(label)) }
+                    ?: throw AssertionError("No editable \"$label\" field")
+                field.text = value
+                SystemClock.sleep(300)
+                val typed = runCatching { field.text }.getOrNull()
+                checks.check(typed != null && typed.isNotEmpty() && typed != label, "Text did not stick in the \"$label\" field after Select (field shows: $typed)")
+                if (DeviceCheck.imeShown()) { device.pressBack(); SystemClock.sleep(500) }
+                checks.check(!DeviceCheck.imeShown(), "Back did not close the keyboard on \"$label\"")
+                checks.check(has(By.text("Connect your playlist")), "Back on \"$label\" closed the playlist editor")
+                route("e2e: field $label", if (byRemote) "dpad" else "touch-fallback", "${if (byRemote) "$moves x DOWN + CENTER" else "tap"}; keyboard opened on Select: $keyboardOpened; text set with UiObject2.setText; Back")
+            }
+            fill("Playlist name", "Device fixture")
+            fill("Server URL", DeviceCheck.FIXTURE_URL)
+            fill("Username", "test")
+            fill("Password", "test")
             runCatching { UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView("Connect & import") }
             shot("03b-connect-form")
             val connectAt: Long
-            var touchedConnect = false
-            // A remote user walks Down through the form. Each text field may pop up the on-screen keyboard,
-            // which takes focus; Back closes it again. Record how many times that was needed.
-            var keyboardDismissals = 0
-            for (i in 0 until 16) {
+            for (i in 0 until 6) {
                 if (focusedOn("Connect & import")) break
-                if (DeviceCheck.imeShown()) { keyboardDismissals++; device.pressBack(); SystemClock.sleep(600); step("keyboard open -> Back; focus: ${focused()}") }
-                else press(KeyEvent.KEYCODE_DPAD_DOWN, 700)
+                if (DeviceCheck.imeShown()) { keyboardTraps++; device.pressBack(); SystemClock.sleep(500) } else press(KeyEvent.KEYCODE_DPAD_DOWN, 600)
             }
-            note("keyboard popped up $keyboardDismissals time(s) while moving Down through the playlist form")
-            checks.check(keyboardDismissals == 0, "Moving Down through the playlist form opened the on-screen keyboard $keyboardDismissals time(s); each needed Back before Down could continue")
+            if (keyboardTraps > 0) checks.check(false, "Moving Down through the playlist form opened the on-screen keyboard $keyboardTraps time(s) without Select")
             if (focusedOn("Connect & import")) {
-                connectAt = SystemClock.elapsedRealtime(); device.pressDPadCenter(); route("e2e: Connect & import", "dpad", "DOWN through the form, $keyboardDismissals x Back to close the keyboard")
+                connectAt = SystemClock.elapsedRealtime(); device.pressDPadCenter(); route("e2e: Connect & import", "dpad", "DOWN + CENTER")
             } else {
                 checks.check(false, "D-pad could not reach \"Connect & import\" (focus: ${focused()})")
                 DeviceCheck.hideIme(); runCatching { UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView("Connect & import") }
                 connectAt = SystemClock.elapsedRealtime(); DeviceCheck.clickText("Connect & import"); route("e2e: Connect & import", "touch-fallback")
-                touchedConnect = true
+                touched = true
             }
-            val imported = waitFor(180_000, 200) { !store.busy.value && store.state.value.channels.size >= 25 }
-            check(imported != null) { "Fixture import did not finish: error='${store.error.value}' channels=${store.state.value.channels.size}" }
+            val touchedConnect = touched
+            val validation = { has(By.textStartsWith("Give your playlist")) || has(By.textStartsWith("Enter your")) }
+            waitFor(180_000, 200) { (!store.busy.value && store.state.value.channels.size >= 25) || (!store.busy.value && validation()) }
+            val imported = if (!store.busy.value && store.state.value.channels.size >= 25) 0L else null
+            if (imported == null) shot("03c-import-not-finished")
+            check(imported != null) { "Fixture import did not finish: error='${store.error.value}' channels=${store.state.value.channels.size} editor error text=${device.findObjects(By.textStartsWith("Give your")).map { it.text } + device.findObjects(By.textStartsWith("Enter")).map { it.text }}" }
             metric("e2e_import_ms", SystemClock.elapsedRealtime() - connectAt)
             // Since 5f05f00 a successful import opens Home with the hero's Play focused (earlier builds opened Live TV).
             checks.check(waitFor(15_000) { !has(By.text("Connect your playlist")) && !has(By.text("Your playlists")) } != null, "Playlist dialogs did not close after import")
             checks.check(waitFor(15_000) { page(scenario) == "Home" } != null, "After import the app did not open Home (page=${page(scenario)})")
             val playFocused = waitFor(10_000) { focusedOn("Play") || focusedOn("Resume") }
-            if (touchedConnect) note("post-import focus not judged: the test had to tap Connect, which leaves touch mode (focus=${focused()})")
+            if (touchedConnect) note("post-import focus not judged: the test had to tap in the form, which puts the app in touch mode (focus=${focused()})")
             else checks.check(playFocused != null, "After import the hero Play button is not focused (focus: ${focused()})")
             SystemClock.sleep(1500)
             note("focus after import: ${focused()}")
