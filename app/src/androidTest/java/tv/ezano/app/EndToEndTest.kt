@@ -57,6 +57,15 @@ class EndToEndTest {
         return false
     }
 
+    /** Names hero texts drawn inside the floating top bar's band (Home scrolled partly under the bar). */
+    private fun heroUnderTopBar(): List<String> {
+        val barBottom = device.displayHeight * 84 / 540
+        return listOf("Play", "Resume", "More info", "FEATURED").filter { label ->
+            val sel = if (label == "FEATURED") By.textStartsWith(label) else By.text(label)
+            runCatching { device.findObjects(sel).any { val b = it.visibleBounds; b.height() > 0 && b.top < barBottom } }.getOrDefault(false)
+        }
+    }
+
     /** From wherever focus is on Home, press Down until a poster in a content row is focused. */
     private fun downIntoRows(checks: SoftChecks, label: String): Boolean {
         for (i in 0..5) {
@@ -105,12 +114,24 @@ class EndToEndTest {
             runCatching { UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView("Connect & import") }
             shot("03b-connect-form")
             val connectAt: Long
-            if (DeviceCheck.dpadToText("Connect & import", KeyEvent.KEYCODE_DPAD_DOWN, 10) != null) {
-                connectAt = SystemClock.elapsedRealtime(); device.pressDPadCenter(); route("e2e: Connect & import", "dpad")
+            var touchedConnect = false
+            // A remote user walks Down through the form. Each text field may pop up the on-screen keyboard,
+            // which takes focus; Back closes it again. Record how many times that was needed.
+            var keyboardDismissals = 0
+            for (i in 0 until 16) {
+                if (focusedOn("Connect & import")) break
+                if (DeviceCheck.imeShown()) { keyboardDismissals++; device.pressBack(); SystemClock.sleep(600); step("keyboard open -> Back; focus: ${focused()}") }
+                else press(KeyEvent.KEYCODE_DPAD_DOWN, 700)
+            }
+            note("keyboard popped up $keyboardDismissals time(s) while moving Down through the playlist form")
+            checks.check(keyboardDismissals == 0, "Moving Down through the playlist form opened the on-screen keyboard $keyboardDismissals time(s); each needed Back before Down could continue")
+            if (focusedOn("Connect & import")) {
+                connectAt = SystemClock.elapsedRealtime(); device.pressDPadCenter(); route("e2e: Connect & import", "dpad", "DOWN through the form, $keyboardDismissals x Back to close the keyboard")
             } else {
                 checks.check(false, "D-pad could not reach \"Connect & import\" (focus: ${focused()})")
                 DeviceCheck.hideIme(); runCatching { UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView("Connect & import") }
                 connectAt = SystemClock.elapsedRealtime(); DeviceCheck.clickText("Connect & import"); route("e2e: Connect & import", "touch-fallback")
+                touchedConnect = true
             }
             val imported = waitFor(180_000, 200) { !store.busy.value && store.state.value.channels.size >= 25 }
             check(imported != null) { "Fixture import did not finish: error='${store.error.value}' channels=${store.state.value.channels.size}" }
@@ -119,7 +140,8 @@ class EndToEndTest {
             checks.check(waitFor(15_000) { !has(By.text("Connect your playlist")) && !has(By.text("Your playlists")) } != null, "Playlist dialogs did not close after import")
             checks.check(waitFor(15_000) { page(scenario) == "Home" } != null, "After import the app did not open Home (page=${page(scenario)})")
             val playFocused = waitFor(10_000) { focusedOn("Play") || focusedOn("Resume") }
-            checks.check(playFocused != null, "After import the hero Play button is not focused (focus: ${focused()})")
+            if (touchedConnect) note("post-import focus not judged: the test had to tap Connect, which leaves touch mode (focus=${focused()})")
+            else checks.check(playFocused != null, "After import the hero Play button is not focused (focus: ${focused()})")
             SystemClock.sleep(1500)
             note("focus after import: ${focused()}")
             shot("03c-after-import")
@@ -138,6 +160,7 @@ class EndToEndTest {
             shot("04-home")
             downIntoRows(checks, "e2e: Home DOWN into rows")
             SystemClock.sleep(800)
+            heroUnderTopBar().let { checks.check(it.isEmpty(), "With focus in the first Home row, the hero's ${it.joinToString()} are drawn under the top navigation bar (overlap)") }
             shot("05-home-rows")
 
             // ---- Movies, Shows, Live TV ----
@@ -203,10 +226,12 @@ class EndToEndTest {
             device.pressBack(); route("e2e: close Audio & subtitles", "dpad", "BACK")
             val cues = waitFor(25_000, 250) { var c = false; scenario.onActivity { a -> c = a.player?.currentCues?.cues?.isNotEmpty() == true }; c }
             checks.check(cues != null, "No subtitle cue rendered from the provider's English VTT within 25 s")
+            // With controls showing, captions sit above the letterbox, so the black box is visible on the video.
+            SystemClock.sleep(600); shot("12-caption-black")
             waitFor(12_000) { var hidden = false; scenario.onActivity { hidden = !it.playerControlsVisible }; hidden }
             var stillPlaying = false; scenario.onActivity { stillPlaying = it.fullPlayer && it.player != null }
             checks.check(stillPlaying, "Closing the Audio & subtitles dialog with Back also left the player")
-            SystemClock.sleep(800); shot("12-caption-black")
+            SystemClock.sleep(800); shot("12b-caption-black-no-controls")
 
             // ---- Back to browsing ----
             device.pressBack()
@@ -217,6 +242,7 @@ class EndToEndTest {
             note("after Back: page=${page(scenario)} focus=${focused()}")
             checks.check(page(scenario) == "Home", "Back from the player did not return to Home (page=${page(scenario)})")
             checks.check(!focused().startsWith("<nothing"), "Nothing has remote focus after leaving the player")
+            heroUnderTopBar().let { checks.check(it.isEmpty(), "After Back from the player, the hero's ${it.joinToString()} are drawn under the top navigation bar (overlap)") }
             shot("13-after-back")
             waitFor(60_000) { !store.guideBusy.value }
         } }

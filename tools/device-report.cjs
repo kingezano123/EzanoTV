@@ -106,7 +106,8 @@ for(const e of routes)md+=`- [${e.step}] ${e.msg}\n`;
 const notes=events.filter(e=>e.kind==='NOTE');
 if(notes.length){md+='\n## Observations (focus, state)\n\n';for(const e of notes)md+=`- [${e.step}] ${e.msg}\n`}
 if(crashes.length){md+='\n## Crashes / ANRs in logcat\n\n';for(const c of crashes)md+=`[${c.step}]\n\`\`\`\n${c.text}\n\`\`\`\n`}
-md+='\n## Screenshots\n\n'+shots.map(s=>`- ${s}`).join('\n')+'\n';
+const base=env.GITHUB_REPOSITORY?`https://github.com/${env.GITHUB_REPOSITORY}/releases/download/device-check/`:'';
+md+='\n## Screenshots\n\n'+shots.map(s=>`- ${base}${s}`).join('\n')+'\n';
 md+='\nOther assets: junit.xml, events.txt (every D-pad press with the resulting focus), logcat-app.txt (app warnings/errors, crashes, test runner), instrument-output.txt (raw am instrument output), hierarchy-*.xml (window hierarchy at each failure).\n';
 fs.writeFileSync(path.join(pub,'summary.md'),md);
 fs.writeFileSync(path.join(pub,'events.txt'),events.map(e=>`[${e.step}] ${e.kind} ${e.msg}`).join('\n')+'\n');
