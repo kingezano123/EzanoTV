@@ -40,8 +40,11 @@ class MainActivity: ComponentActivity() {
     /** The browse screens kept underneath playback, so Back returns to the same title, row and filters. */
     val browseFocus=androidx.compose.ui.focus.FocusRequester()
     var homeEntryReady by mutableStateOf(false)
+    var homeEntryFocused=false
     /** Set after a playlist import so Home focuses its new content once it appears. */
     var focusHomeContent by mutableStateOf(false)
+    /** Home has scrolled past the top of its billboard; the top bar turns solid so rows don't show through it. */
+    var homeScrolled by mutableStateOf(false)
     private var session: MediaSession?=null
     val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
     private var playbackJob: Job?=null

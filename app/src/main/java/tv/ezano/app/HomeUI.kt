@@ -28,7 +28,7 @@ import kotlinx.coroutines.*
     val enteringSearch=a.focusCatalogSearch
     LaunchedEffect(a.page) {if(!a.focusImportedChannel && !enteringSearch && !a.focusCatalogSearch) {inputMode.requestInputMode(InputMode.Keyboard);runCatching {first.requestFocus()}} }
     // On Home the bar floats over the full-screen artwork, like Disney+; other pages keep a solid bar.
-    val navBackground=if(a.page=="Home") Brush.verticalGradient(listOf(Color.Black.copy(.82f),Color.Black.copy(.35f),Color.Transparent)) else Brush.verticalGradient(listOf(Color.Black,Color.Black))
+    val navBackground=if(a.page=="Home" && !a.homeScrolled) Brush.verticalGradient(listOf(Color.Black.copy(.82f),Color.Black.copy(.35f),Color.Transparent)) else Brush.verticalGradient(listOf(Color.Black,Color.Black.copy(.97f)))
     Row(Modifier.fillMaxWidth().height(if(a.page=="Home") 84.dp else 66.dp).background(navBackground).padding(horizontal=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
         Text("EZANO",color=Color.White,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp,modifier=Modifier.padding(end=18.dp))
         listOf("Home" to "Home","Live TV" to "Live TV","Movies" to "Movies","Series" to "Shows","My list" to "My stuff").forEachIndexed {i,(page,label)->
@@ -63,8 +63,8 @@ import kotlinx.coroutines.*
 
 /** Registers the control that receives focus when Down is pressed in the top bar; Up returns to the bar. */
 @Composable private fun Modifier.homeEntry(a: MainActivity): Modifier {
-    DisposableEffect(a) {a.homeEntryReady=true;onDispose {a.homeEntryReady=false}}
-    return this.focusRequester(a.homeEntry).focusProperties {up=a.navFocus}
+    DisposableEffect(a) {a.homeEntryReady=true;onDispose {a.homeEntryReady=false;a.homeEntryFocused=false}}
+    return this.focusRequester(a.homeEntry).focusProperties {up=a.navFocus}.onFocusChanged {a.homeEntryFocused=it.isFocused}
 }
 
 private val homeCache=ScreenCache<HomeSnapshot>(2)
@@ -118,10 +118,22 @@ object WatchHistory {
         }
     }
     val hero=heroes.getOrNull(heroIndex)?.let {details[it.id]?:it}
-    LaunchedEffect(a.focusHomeContent,a.homeEntryReady) {if(a.focusHomeContent && a.homeEntryReady) {delay(250);runCatching {a.homeEntry.requestFocus()};a.focusHomeContent=false}}
+    // After an import the dialogs close first; keep asking until Home's main control actually holds focus.
+    val windowFocused=androidx.compose.ui.platform.LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(a.focusHomeContent,a.homeEntryReady,windowFocused) {
+        if(a.focusHomeContent && a.homeEntryReady && windowFocused) {
+            delay(200)
+            for(attempt in 0 until 12) {runCatching {a.homeEntry.requestFocus()};delay(150);if(heroFocused || a.homeEntryFocused) break}
+            a.focusHomeContent=false
+        }
+    }
+    val listState=rememberLazyListState();val heroScroll=rememberCoroutineScope()
+    val scrolled by remember {derivedStateOf {listState.firstVisibleItemIndex>0 || listState.firstVisibleItemScrollOffset>160}}
+    LaunchedEffect(scrolled) {a.homeScrolled=scrolled}
+    DisposableEffect(Unit) {onDispose {a.homeScrolled=false}}
     val screenHeight=androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
     val motion=LocalMotion.current
-    LazyColumn(Modifier.fillMaxSize().focusRequester(a.homeContent).focusGroup().background(Ink),contentPadding=PaddingValues(bottom=28.dp)) {
+    LazyColumn(Modifier.fillMaxSize().focusRequester(a.homeContent).focusGroup().background(Ink),state=listState,contentPadding=PaddingValues(bottom=28.dp)) {
         hero?.let {c->item(key="hero") {
             Box(Modifier.fillMaxWidth().height(screenHeight*.80f)) {
                 val art=c.backdrop.takeIf(::hasArt)?:c.logo
@@ -139,7 +151,7 @@ object WatchHistory {
                         Text(listOf(c.year.take(4),if(c.kind==Kind.MOVIE) "Movie" else "Series",c.genre.split(',','/').firstOrNull()?.trim().orEmpty()).filter {it.isNotBlank()}.joinToString("  •  "),color=Color(0xFFE0E0E0),fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                     }
                     if(c.description.isNotBlank()) Text(c.description,color=Color(0xFFE6E6E6),fontSize=12.5.sp,lineHeight=19.sp,maxLines=3,overflow=TextOverflow.Ellipsis)
-                    Row(Modifier.onFocusChanged {heroFocused=it.hasFocus}.padding(top=4.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Row(Modifier.onFocusChanged {heroFocused=it.hasFocus;if(it.hasFocus) heroScroll.launch {listState.animateScrollToItem(0)}}.padding(top=4.dp),horizontalArrangement=Arrangement.spacedBy(10.dp),verticalAlignment=Alignment.CenterVertically) {
                         EzButton(if((s.positions[c.id]?:0)>0) "Resume" else "Play",Icons.Outlined.PlayArrow,primary=true,modifier=Modifier.homeEntry(a),onClick={if(c.kind==Kind.SERIES) onDetails(c) else a.play(c)})
                         EzButton("More info",Icons.Outlined.Info,onClick={onDetails(c)})
                     }
