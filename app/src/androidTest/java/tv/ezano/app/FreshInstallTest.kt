@@ -46,8 +46,14 @@ class FreshInstallTest {
             note("initial focus on fresh Home: ${focused()}")
             shot("01-fresh-home")
 
-            // A remote user presses Down from the top navigation to reach the button.
             val target = focusedText("Add a playlist")
+            note("\"Add a playlist\" focused on arrival: ${DeviceCheck.has(target)}")
+            // Start from the top navigation, as the user did: Up until a nav tab has focus.
+            val navTabs = listOf("Home", "Live TV", "Movies", "Shows", "My stuff")
+            for (i in 0 until 3) { if (navTabs.any { DeviceCheck.has(focusedText(it)) }) break; DeviceCheck.press(KeyEvent.KEYCODE_DPAD_UP) }
+            checks.check(navTabs.any { DeviceCheck.has(focusedText(it)) }, "Could not put focus on the top navigation with D-pad UP (focus: ${focused()})")
+            note("focus before DOWN: ${focused()}")
+            // A remote user presses Down from the top navigation to reach the button.
             val presses = DeviceCheck.dpadUntil(target, KeyEvent.KEYCODE_DPAD_DOWN, 3)
             val reached = presses != null
             if (reached) route("fresh: reach Add a playlist", "dpad", "$presses x DOWN")

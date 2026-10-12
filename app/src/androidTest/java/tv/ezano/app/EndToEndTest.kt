@@ -113,15 +113,21 @@ class EndToEndTest {
             val imported = waitFor(180_000, 200) { !store.busy.value && store.state.value.channels.size >= 25 }
             check(imported != null) { "Fixture import did not finish: error='${store.error.value}' channels=${store.state.value.channels.size}" }
             metric("e2e_import_ms", SystemClock.elapsedRealtime() - connectAt)
-            checks.check(waitFor(15_000) { page(scenario) == "Live TV" } != null, "After import the app did not open Live TV (page=${page(scenario)})")
+            // Since 5f05f00 a successful import opens Home with the hero's Play focused (earlier builds opened Live TV).
+            checks.check(waitFor(15_000) { !has(By.text("Connect your playlist")) && !has(By.text("Your playlists")) } != null, "Playlist dialogs did not close after import")
+            checks.check(waitFor(15_000) { page(scenario) == "Home" } != null, "After import the app did not open Home (page=${page(scenario)})")
+            val playFocused = waitFor(10_000) { has(focusedText("Play")) || has(focusedText("Resume")) }
+            checks.check(playFocused != null, "After import the hero Play button is not focused (focus: ${focused()})")
             SystemClock.sleep(1500)
             note("focus after import: ${focused()}")
             shot("03c-after-import")
 
             // ---- Home with data ----
-            device.pressBack()
-            val homeOk = waitFor(5_000) { page(scenario) == "Home" } != null
-            if (homeOk) route("e2e: back to Home", "dpad", "BACK") else { scenario.onActivity { it.page = "Home" }; route("e2e: back to Home", "direct") }
+            if (page(scenario) != "Home") {
+                device.pressBack()
+                val homeOk = waitFor(5_000) { page(scenario) == "Home" } != null
+                if (homeOk) route("e2e: back to Home", "dpad", "BACK") else { scenario.onActivity { it.page = "Home" }; route("e2e: back to Home", "direct") }
+            } else route("e2e: Home after import", "dpad", "app opened Home itself")
             val heroAfter = waitFor(30_000) { DeviceCheck.anyOf(*homeMarkers) != null }
             checks.check(heroAfter != null, "Home shows no hero/rows with the fixture library")
             checks.check(has(By.text("Popular kids movies")) || has(By.text("Family picks")), "Home has no \"Popular kids movies\" row")
@@ -209,6 +215,7 @@ class EndToEndTest {
             SystemClock.sleep(1500)
             note("after Back: page=${page(scenario)} focus=${focused()}")
             checks.check(page(scenario) == "Home", "Back from the player did not return to Home (page=${page(scenario)})")
+            checks.check(!focused().startsWith("<nothing"), "Nothing has remote focus after leaving the player")
             shot("13-after-back")
             waitFor(60_000) { !store.guideBusy.value }
         }
