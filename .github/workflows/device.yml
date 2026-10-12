@@ -10,13 +10,13 @@ on:
     branches: ["claude/**"]
   workflow_dispatch:
 
-concurrency:
-  group: device-check-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   device:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[device]')
+    # Job-level, so commits without [device] (skipped jobs) never cancel a running check.
+    concurrency:
+      group: device-check-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 150
     permissions:
