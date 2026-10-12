@@ -22,7 +22,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.*
 import kotlinx.coroutines.*
 
-@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 /** Subtitles are white with a shadow, or white on a black box for busy or bright scenes. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal fun captionStyle(boxed: Boolean)=CaptionStyleCompat(android.graphics.Color.WHITE,if(boxed)0xD9000000.toInt() else android.graphics.Color.TRANSPARENT,android.graphics.Color.TRANSPARENT,if(boxed)CaptionStyleCompat.EDGE_TYPE_NONE else CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,android.graphics.Color.BLACK,android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL))
