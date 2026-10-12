@@ -11,7 +11,7 @@ import org.junit.Rule
 import org.junit.Test
 import tv.ezano.app.DeviceCheck.device
 import tv.ezano.app.DeviceCheck.focused
-import tv.ezano.app.DeviceCheck.focusedText
+import tv.ezano.app.DeviceCheck.focusedOn
 import tv.ezano.app.DeviceCheck.has
 import tv.ezano.app.DeviceCheck.metric
 import tv.ezano.app.DeviceCheck.note
@@ -39,15 +39,14 @@ class EndToEndTest {
 
     /** Reach a top-navigation tab with the remote: Up into the bar, then Left/Right to the tab, then Select. */
     private fun openTab(scenario: ActivityScenario<MainActivity>, label: String, pageName: String, checks: SoftChecks): Boolean {
-        val target = focusedText(label)
-        if (!has(target)) {
+        if (!focusedOn(label)) {
             // Up until any nav tab has focus.
-            for (i in 0 until 8) { if (navLabels.any { has(focusedText(it)) }) break; press(KeyEvent.KEYCODE_DPAD_UP) }
+            for (i in 0 until 8) { if (navLabels.any { focusedOn(it) }) break; press(KeyEvent.KEYCODE_DPAD_UP) }
         }
         val order = listOf("Home", "Live TV", "Movies", "Shows", "My stuff")
-        val current = order.firstOrNull { has(focusedText(it)) }
+        val current = order.firstOrNull { focusedOn(it) }
         val key = if (current != null && order.indexOf(current) > order.indexOf(label)) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-        val presses = DeviceCheck.dpadUntil(target, key, 6)
+        val presses = DeviceCheck.dpadToText(label, key, 6)
         if (presses != null) {
             device.pressDPadCenter()
             if (waitFor(5_000) { page(scenario) == pageName } != null) { route("open $label", "dpad", "focus was ${current ?: "elsewhere"}, $presses x ${DeviceCheck.keyName(key)} + CENTER"); return true }
@@ -61,9 +60,7 @@ class EndToEndTest {
     /** From wherever focus is on Home, press Down until a poster in a content row is focused. */
     private fun downIntoRows(checks: SoftChecks, label: String): Boolean {
         for (i in 0..5) {
-            val f = runCatching { device.findObject(By.focused(true)) }.getOrNull()
-            val text = runCatching { f?.text ?: f?.contentDescription }.getOrNull()
-            if (f != null && text !in navLabels && text !in heroButtons) { route(label, "dpad", "$i x DOWN, focus: ${DeviceCheck.describe(f)}"); return true }
+            if (DeviceCheck.anythingFocused() && (navLabels + heroButtons).none { focusedOn(it) }) { route(label, "dpad", "$i x DOWN, focus: ${focused()}"); return true }
             if (i < 5) press(KeyEvent.KEYCODE_DPAD_DOWN, 700)
         }
         checks.check(false, "$label: D-pad DOWN never moved focus into a Home row (focus: ${focused()})")
@@ -73,22 +70,22 @@ class EndToEndTest {
     @Test fun addPlaylistBrowsePlayAndReturn() {
         DeviceCheck.fastUiAutomator()
         val checks = SoftChecks()
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).use { scenario -> DeviceCheck.capturing("EndToEndTest") {
             // ---- Add the fixture playlist through the real UI ----
             check(waitForObject(By.text("Add a playlist"), 60_000) != null) { "Fresh Home without \"Add a playlist\" (is app data cleared?)" }
             SystemClock.sleep(800)
-            if (DeviceCheck.dpadUntil(focusedText("Add a playlist"), KeyEvent.KEYCODE_DPAD_DOWN, 3) != null) {
+            if (DeviceCheck.dpadToText("Add a playlist", KeyEvent.KEYCODE_DPAD_DOWN, 3) != null) {
                 device.pressDPadCenter(); route("e2e: Add a playlist", "dpad")
             } else {
                 checks.check(false, "D-pad could not reach \"Add a playlist\" (focus: ${focused()})")
-                device.findObject(By.text("Add a playlist")).click(); route("e2e: Add a playlist", "touch-fallback")
+                DeviceCheck.clickText("Add a playlist"); route("e2e: Add a playlist", "touch-fallback")
             }
             check(waitForObject(By.text("Your playlists"), 10_000) != null) { "Playlist manager did not open" }
-            if (DeviceCheck.dpadUntil(focusedText("Add playlist"), KeyEvent.KEYCODE_DPAD_DOWN, 6) != null) {
+            if (DeviceCheck.dpadToText("Add playlist", KeyEvent.KEYCODE_DPAD_DOWN, 6) != null) {
                 device.pressDPadCenter(); route("e2e: Add playlist", "dpad")
             } else {
                 checks.check(false, "D-pad could not reach \"Add playlist\" (focus: ${focused()})")
-                device.findObject(By.text("Add playlist")).click(); route("e2e: Add playlist", "touch-fallback")
+                DeviceCheck.clickText("Add playlist"); route("e2e: Add playlist", "touch-fallback")
             }
             check(waitForObject(By.text("Connect your playlist"), 10_000) != null) { "Playlist editor did not open" }
             SystemClock.sleep(500)
@@ -101,14 +98,19 @@ class EndToEndTest {
             fields[2].text = "test"
             fields[3].text = "test"
             route("e2e: fill Xtream form", "direct", "UiObject2.setText; no on-screen keyboard typing")
+            SystemClock.sleep(500)
+            note("keyboard shown after filling fields: ${DeviceCheck.imeShown()}; focus=${focused()}")
+            DeviceCheck.hideIme()
+            checks.check(has(By.text("Connect your playlist")), "Closing the keyboard with Back also closed the playlist editor")
             runCatching { UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView("Connect & import") }
             shot("03b-connect-form")
             val connectAt: Long
-            if (DeviceCheck.dpadUntil(focusedText("Connect & import"), KeyEvent.KEYCODE_DPAD_DOWN, 10) != null) {
+            if (DeviceCheck.dpadToText("Connect & import", KeyEvent.KEYCODE_DPAD_DOWN, 10) != null) {
                 connectAt = SystemClock.elapsedRealtime(); device.pressDPadCenter(); route("e2e: Connect & import", "dpad")
             } else {
                 checks.check(false, "D-pad could not reach \"Connect & import\" (focus: ${focused()})")
-                connectAt = SystemClock.elapsedRealtime(); device.findObject(By.text("Connect & import")).click(); route("e2e: Connect & import", "touch-fallback")
+                DeviceCheck.hideIme(); runCatching { UiScrollable(UiSelector().scrollable(true)).scrollTextIntoView("Connect & import") }
+                connectAt = SystemClock.elapsedRealtime(); DeviceCheck.clickText("Connect & import"); route("e2e: Connect & import", "touch-fallback")
             }
             val imported = waitFor(180_000, 200) { !store.busy.value && store.state.value.channels.size >= 25 }
             check(imported != null) { "Fixture import did not finish: error='${store.error.value}' channels=${store.state.value.channels.size}" }
@@ -116,7 +118,7 @@ class EndToEndTest {
             // Since 5f05f00 a successful import opens Home with the hero's Play focused (earlier builds opened Live TV).
             checks.check(waitFor(15_000) { !has(By.text("Connect your playlist")) && !has(By.text("Your playlists")) } != null, "Playlist dialogs did not close after import")
             checks.check(waitFor(15_000) { page(scenario) == "Home" } != null, "After import the app did not open Home (page=${page(scenario)})")
-            val playFocused = waitFor(10_000) { has(focusedText("Play")) || has(focusedText("Resume")) }
+            val playFocused = waitFor(10_000) { focusedOn("Play") || focusedOn("Resume") }
             checks.check(playFocused != null, "After import the hero Play button is not focused (focus: ${focused()})")
             SystemClock.sleep(1500)
             note("focus after import: ${focused()}")
@@ -168,7 +170,7 @@ class EndToEndTest {
             SystemClock.sleep(1800); note("details focus: ${focused()}"); shot("09-details")
 
             // ---- Playback ----
-            val watchFocused = has(focusedText("Watch")) || has(focusedText("Resume"))
+            val watchFocused = focusedOn("Watch") || focusedOn("Resume")
             checks.check(watchFocused, "Details did not focus Watch initially (focus: ${focused()})")
             val playAt = SystemClock.elapsedRealtime()
             if (watchFocused) { device.pressDPadCenter(); route("e2e: Watch", "dpad", "CENTER") }
@@ -184,18 +186,17 @@ class EndToEndTest {
             var controls = false; scenario.onActivity { controls = it.playerControlsVisible }
             if (!controls) press(KeyEvent.KEYCODE_DPAD_UP)
             waitForObject(By.text("Audio & subtitles"), 5_000)
-            if (DeviceCheck.dpadUntil(focusedText("Audio & subtitles"), KeyEvent.KEYCODE_DPAD_RIGHT, 6) != null) { device.pressDPadCenter(); route("e2e: Audio & subtitles", "dpad") }
+            if (DeviceCheck.dpadToText("Audio & subtitles", KeyEvent.KEYCODE_DPAD_RIGHT, 6) != null) { device.pressDPadCenter(); route("e2e: Audio & subtitles", "dpad") }
             else {
                 checks.check(false, "D-pad could not reach \"Audio & subtitles\" (focus: ${focused()})")
-                device.findObject(By.text("Audio & subtitles"))?.click(); route("e2e: Audio & subtitles", "touch-fallback")
+                DeviceCheck.clickText("Audio & subtitles"); route("e2e: Audio & subtitles", "touch-fallback")
             }
             checks.check(waitForObject(By.textStartsWith("Caption background"), 8_000) != null, "Audio & subtitles dialog did not open")
             SystemClock.sleep(800); note("audio/subs focus: ${focused()}"); shot("11-audio-subs")
-            val toggle = By.textStartsWith("Caption background").focused(true)
-            if (DeviceCheck.dpadUntil(toggle, KeyEvent.KEYCODE_DPAD_DOWN, 4) != null) { device.pressDPadCenter(); route("e2e: Caption background", "dpad") }
+            if (DeviceCheck.dpadToText("Caption background", KeyEvent.KEYCODE_DPAD_DOWN, 4, prefix = true) != null) { device.pressDPadCenter(); route("e2e: Caption background", "dpad") }
             else {
                 checks.check(false, "D-pad could not reach \"Caption background\" (focus: ${focused()})")
-                device.findObject(By.textStartsWith("Caption background"))?.click(); route("e2e: Caption background", "touch-fallback")
+                DeviceCheck.clickText("Caption background", prefix = true); route("e2e: Caption background", "touch-fallback")
             }
             checks.check(waitForObject(By.text("Caption background: Black"), 5_000) != null, "Caption background did not switch to Black")
             checks.check(store.state.value.prefs.subtitleBackground, "prefs.subtitleBackground is still false")
@@ -218,7 +219,7 @@ class EndToEndTest {
             checks.check(!focused().startsWith("<nothing"), "Nothing has remote focus after leaving the player")
             shot("13-after-back")
             waitFor(60_000) { !store.guideBusy.value }
-        }
+        } }
         checks.assertAll()
     }
 }

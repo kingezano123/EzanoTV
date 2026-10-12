@@ -47,8 +47,12 @@ pull_files() {
   # Older tests write PNGs to the app's internal files dir (debuggable build, so run-as works).
   for f in live-tested.png movies-tested.png player-030.png detail-030.png home-030.png favorites-030.png; do
     adb exec-out run-as "$PKG" cat "files/$f" > "$OUT/files/$1/$f" 2>/dev/null || true
-    [ -s "$OUT/files/$1/$f" ] || rm -f "$OUT/files/$1/$f"
+    # run-as prints its error to stdout; keep only real PNGs.
+    [ "$(head -c 4 "$OUT/files/$1/$f" 2>/dev/null | od -An -tx1 | tr -d ' \n')" = 89504e47 ] || rm -f "$OUT/files/$1/$f"
+    adb shell run-as "$PKG" rm -f "files/$f" >/dev/null 2>&1 || true
   done
+  # Clear what was collected so the next step's folder only holds its own output.
+  adb shell "rm -rf /sdcard/Android/data/$PKG/files/device-check /sdcard/Android/data/$PKG/files/*.png" >/dev/null 2>&1 || true
 }
 
 # run_step NAME clear|keep DESCRIPTION -e class ...
@@ -57,13 +61,15 @@ run_step() {
   log "step $name: $desc"
   if [ "$mode" = clear ]; then adb shell pm clear "$PKG" >/dev/null; fi
   adb shell input keyevent KEYCODE_WAKEUP >/dev/null 2>&1 || true
-  adb logcat -c || true
+  adb logcat -c >/dev/null 2>&1 || true
+  # logcat -c does not always clear on the emulator, so also read only lines after this moment.
+  local since; since=$(adb shell "date +'%m-%d %H:%M:%S.000'" | tr -d '\r')
   local start end code
   start=$(date +%s)
   timeout 1500 adb shell am instrument -r -w "$@" "$RUNNER" > "$OUT/raw/$name.txt" 2>&1
   code=$?
   end=$(date +%s)
-  adb logcat -d -v threadtime > "$OUT/logcat/$name.txt" 2>/dev/null || true
+  adb logcat -d -v threadtime -T "$since" > "$OUT/logcat/$name.txt" 2>/dev/null || adb logcat -d -v threadtime > "$OUT/logcat/$name.txt" 2>/dev/null || true
   pull_files "$name"
   printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$desc" "$*" "$code" "$((end-start))" >> "$OUT/steps.tsv"
   log "step $name finished in $((end-start)) s (exit $code): $(grep -E '^(OK|FAILURES|INSTRUMENTATION_RESULT: shortMsg)' "$OUT/raw/$name.txt" | head -2 | tr '\n' ' ')"

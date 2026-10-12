@@ -97,18 +97,50 @@ object DeviceCheck {
     }
 
     /**
-     * Presses [key] up to [maxPresses] times until [target] (which should include `.focused(true)`) exists.
-     * Returns the number of presses used, or null if the target never became focused.
+     * True when the focused node shows [text] itself or in a descendant. Compose often puts focus on
+     * a container (button row, poster column) whose label is a child node, so By.text(..).focused(true)
+     * alone misses it.
      */
-    fun dpadUntil(target: BySelector, key: Int, maxPresses: Int, settleMs: Long = 600): Int? {
+    fun focusedOn(text: String, prefix: Boolean = false): Boolean = runCatching {
+        val sel = if (prefix) By.textStartsWith(text) else By.text(text)
+        device.findObjects(By.focused(true)).any { f ->
+            val own = f.text ?: f.contentDescription
+            (own != null && (if (prefix) own.startsWith(text) else own == text)) || f.hasObject(sel) ||
+                (f.contentDescription == null && f.hasObject(if (prefix) By.descStartsWith(text) else By.desc(text)))
+        }
+    }.getOrDefault(false)
+    fun anythingFocused() = runCatching { device.hasObject(By.focused(true)) }.getOrDefault(false)
+
+    /** Presses [key] up to [maxPresses] times until [reached]; returns presses used, or null. */
+    fun dpadUntil(reached: () -> Boolean, key: Int, maxPresses: Int, settleMs: Long = 600): Int? {
         for (i in 0..maxPresses) {
-            if (waitForObject(target, if (i == 0) 300 else settleMs) != null) return i
+            if (waitFor(if (i == 0) 300 else settleMs) { reached() } != null) return i
             if (i == maxPresses) break
             press(key, 0)
         }
         return null
     }
-    fun focusedText(text: String): BySelector = By.text(text).focused(true)
+    fun dpadToText(text: String, key: Int, maxPresses: Int, prefix: Boolean = false) = dpadUntil({ focusedOn(text, prefix) }, key, maxPresses)
+
+    fun imeShown() = runCatching { device.executeShellCommand("dumpsys input_method").contains("mInputShown=true") }.getOrDefault(false)
+    /** Closes the on-screen keyboard with Back if it is showing; returns whether it was. */
+    fun hideIme(): Boolean {
+        if (!imeShown()) return false
+        device.pressBack(); SystemClock.sleep(500); note("closed the on-screen keyboard with Back")
+        return true
+    }
+    fun clickText(text: String, prefix: Boolean = false) {
+        val o = device.findObject(if (prefix) By.textStartsWith(text) else By.text(text))
+            ?: throw AssertionError("\"$text\" is not on screen (focus: ${focused()})")
+        o.click()
+    }
+
+    /** Runs [body]; on failure screenshots and dumps the UI *before* the activity closes, then rethrows. */
+    fun <T> capturing(name: String, body: () -> T): T = try { body() } catch (t: Throwable) {
+        runCatching { shot("FAIL-$name") }
+        dumpHierarchy("FAIL-$name")
+        throw t
+    }
 }
 
 /** Collects non-fatal check failures so a run continues and screenshots every later step. */
@@ -121,12 +153,9 @@ class SoftChecks {
     fun assertAll() { if (failures.isNotEmpty()) throw AssertionError("${failures.size} device check(s) failed:\n- " + failures.joinToString("\n- ")) }
 }
 
-/** On any test failure: screenshot plus window hierarchy, named after the test. */
+/** Logs every test failure (the in-test [DeviceCheck.capturing] wrapper takes the screenshots). */
 class FailureArtifacts : TestWatcher() {
     override fun failed(e: Throwable?, description: Description) {
-        val name = "FAIL-${description.testClass.simpleName}-${description.methodName}"
-        DeviceCheck.failure("$name: ${e?.toString()?.take(600)}")
-        runCatching { DeviceCheck.shot(name) }
-        DeviceCheck.dumpHierarchy(name)
+        DeviceCheck.failure("${description.testClass?.simpleName}#${description.methodName}: ${e?.toString()?.take(600)}")
     }
 }
