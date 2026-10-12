@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.focus.*
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -72,11 +73,36 @@ internal fun hasArt(url: String)=url.isNotBlank() && url!="null"
         }
     }
 }
+/** Remote-friendly text field: moving onto it never opens the keyboard (which would trap the D-pad);
+ * Select opens it, Back or Next closes it and Next moves on to the following field or button.
+ */
 @Composable fun Field(label: String,value: String,onChange: (String)->Unit,secret: Boolean=false) {
-    // On TV keyboards, Next/Done moves on to the following field or button instead of leaving focus in the keyboard.
     val focusManager=androidx.compose.ui.platform.LocalFocusManager.current
-    OutlinedTextField(value,onChange,label={ Text(label,style=MaterialTheme.typography.bodyMedium) },singleLine=true,
-        keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Next),
-        keyboardActions=androidx.compose.foundation.text.KeyboardActions(onNext={focusManager.moveFocus(FocusDirection.Down)},onDone={focusManager.moveFocus(FocusDirection.Down)}),shape=RoundedCornerShape(14.dp),modifier=Modifier.fillMaxWidth(),textStyle=MaterialTheme.typography.bodyLarge,visualTransformation=if(secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,colors=OutlinedTextFieldDefaults.colors(focusedBorderColor=LocalAccent.current,unfocusedBorderColor=Muted.copy(.4f),focusedContainerColor=Color.White.copy(.04f),unfocusedContainerColor=Ink.copy(.2f),focusedLabelColor=LocalAccent.current,unfocusedLabelColor=Muted,focusedTextColor=Color.White,unfocusedTextColor=Color.White,cursorColor=LocalAccent.current))
+    val keyboard=androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val inputMode=androidx.compose.ui.platform.LocalInputModeManager.current
+    var editing by remember {mutableStateOf(false)}
+    var pendingSelectKey by remember {mutableIntStateOf(0)}
+    val interactions=remember {androidx.compose.foundation.interaction.MutableInteractionSource()}
+    val imeOpen=androidx.compose.foundation.layout.WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current)>0
+    var imeWasOpen by remember {mutableStateOf(false)}
+    LaunchedEffect(imeOpen) {if(imeOpen) imeWasOpen=true else if(imeWasOpen) {imeWasOpen=false;editing=false;pendingSelectKey=0}}
+    LaunchedEffect(editing) {if(editing) {kotlinx.coroutines.delay(80);inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard);keyboard?.show()} else keyboard?.hide()}
+    LaunchedEffect(interactions) {interactions.interactions.collect {if(it is androidx.compose.foundation.interaction.PressInteraction.Release) editing=true}}
+    androidx.activity.compose.BackHandler(enabled=editing) {editing=false;pendingSelectKey=0;keyboard?.hide()}
+    fun next() {editing=false;pendingSelectKey=0;keyboard?.hide();focusManager.moveFocus(FocusDirection.Down)}
+    OutlinedTextField(value,onChange,label={ Text(label,style=MaterialTheme.typography.bodyMedium) },singleLine=true,readOnly=!editing,interactionSource=interactions,
+        modifier=Modifier.fillMaxWidth().onFocusChanged {if(!it.isFocused) {editing=false;pendingSelectKey=0} else if(!editing) keyboard?.hide()}
+            .onPreviewKeyEvent {event->
+                val native=event.nativeKeyEvent
+                val select=native.keyCode==android.view.KeyEvent.KEYCODE_DPAD_CENTER || native.keyCode==android.view.KeyEvent.KEYCODE_ENTER
+                if(!select || editing) false else when(native.action) {
+                    android.view.KeyEvent.ACTION_DOWN -> {if(pendingSelectKey==0) pendingSelectKey=native.keyCode;true}
+                    android.view.KeyEvent.ACTION_UP -> {val pending=pendingSelectKey==native.keyCode;pendingSelectKey=0;if(pending && !native.isCanceled) editing=true;pending}
+                    else -> pendingSelectKey==native.keyCode
+                }
+            },
+        keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(imeAction=androidx.compose.ui.text.input.ImeAction.Next,showKeyboardOnFocus=false),
+        keyboardActions=androidx.compose.foundation.text.KeyboardActions(onNext={next()},onDone={next()}),
+        shape=RoundedCornerShape(14.dp),textStyle=MaterialTheme.typography.bodyLarge,visualTransformation=if(secret) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,colors=OutlinedTextFieldDefaults.colors(focusedBorderColor=LocalAccent.current,unfocusedBorderColor=Muted.copy(.4f),focusedContainerColor=Color.White.copy(.04f),unfocusedContainerColor=Ink.copy(.2f),focusedLabelColor=LocalAccent.current,unfocusedLabelColor=Muted,focusedTextColor=Color.White,unfocusedTextColor=Color.White,cursorColor=LocalAccent.current))
 }
 @Composable fun SettingRow(title: String,detail: String,value: String,onClick: ()->Unit) { Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(20.dp)) { Column(Modifier.weight(1f)) { Text(title,color=Color.White,style=MaterialTheme.typography.titleSmall); Text(detail,color=Muted,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=4.dp)) }; EzButton(value,onClick=onClick) } }
