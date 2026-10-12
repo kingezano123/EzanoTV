@@ -42,7 +42,7 @@ internal fun captionStyle(boxed: Boolean)=CaptionStyleCompat(android.graphics.Co
 private fun playbackTime(ms: Long): String {val sec=(ms.coerceAtLeast(0)/1000);return if(sec>=3600) "%d:%02d:%02d".format(sec/3600,sec/60%60,sec%60) else "%d:%02d".format(sec/60,sec%60)}
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class,androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable fun PlayerScreen(a: MainActivity) {
     val p=a.player?:return;val c=a.playing?:return;val s by a.store.libraryState()
     var tracks by remember {mutableStateOf<Int?>(null)};var subtitleSources by remember {mutableStateOf(false)}
