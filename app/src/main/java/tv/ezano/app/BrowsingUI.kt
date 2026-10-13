@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
@@ -280,9 +281,11 @@ import java.time.format.DateTimeFormatter
         Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(18.dp)) {
             LazyColumn(Modifier.width(148.dp).fillMaxHeight().clip(RoundedCornerShape(13.dp)).background(Color.White.copy(.025f)), contentPadding = PaddingValues(6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 item { Text("CHANNEL GROUPS", color = Muted, fontSize = 8.sp, letterSpacing = 1.sp, modifier = Modifier.padding(9.dp)) }
-                item { GuideCategory("All channels", group.isEmpty()) { group = "" } }
-                item { GuideCategory("Favorites", group == "__favorites") { group = "__favorites" } }
-                items((groups + s.groups.keys).distinct(), key = { it }) { g -> GuideCategory(g, group == g) { group = g } }
+                // Right from a group goes straight into the channel list (to its first row when it is on screen).
+                val intoChannels = Modifier.focusProperties { if (channels.isNotEmpty() && listState.firstVisibleItemIndex == 0) right = importedChannelFocus }
+                item { GuideCategory("All channels", group.isEmpty(), intoChannels) { group = "" } }
+                item { GuideCategory("Favorites", group == "__favorites", intoChannels) { group = "__favorites" } }
+                items((groups + s.groups.keys).distinct(), key = { it }) { g -> GuideCategory(g, group == g, intoChannels) { group = g } }
             }
             Column(Modifier.weight(1f)) {
                 selected?.let { c ->
@@ -311,7 +314,7 @@ import java.time.format.DateTimeFormatter
                             if(full!=null) action(full) else a.scope.launch {action(withContext(Dispatchers.Default) {channels[index]})}
                         }
                         GuideChannelRow(c, index + 1, c.id == selected?.id, c.id in s.favorites, programs, start, end, now,
-                            channelModifier = if (label.id == restoreId) Modifier.focusRequester(restoreFocus) else if (index == 0) Modifier.focusRequester(importedChannelFocus) else Modifier,
+                            channelModifier = Modifier.then(if (index == 0) Modifier.focusRequester(importedChannelFocus) else Modifier).then(if (label.id == restoreId) Modifier.focusRequester(restoreFocus) else Modifier),
                             onChannelFocus = { ready {selected = it; selectedProgram = null} }, onChannelClick = { ready(a::play) }, onChannelLongPress = { ready {favoritePrompt = it} },
                             onProgramFocus = { p -> ready {selected = it; selectedProgram = p} }, onProgramClick = { p -> ready {onProgram(it, p)} })
                     }
@@ -328,10 +331,10 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable private fun GuideCategory(label: String, selected: Boolean, onClick: () -> Unit) {
+@Composable private fun GuideCategory(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val accent = LocalAccent.current
-    Row(Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.clip(RoundedCornerShape(7.dp)).background(if (focused) Color.White else if (selected) accent.copy(.13f) else Color.Transparent)
+    Row(modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.clip(RoundedCornerShape(7.dp)).background(if (focused) Color.White else if (selected) accent.copy(.13f) else Color.Transparent)
         .clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = if (focused) Ink else if (selected) accent else Color.White.copy(.75f), fontSize = 10.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
