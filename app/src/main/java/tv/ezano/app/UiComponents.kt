@@ -103,9 +103,11 @@ internal fun hasArt(url: String)=url.isNotBlank() && url!="null"
             .onPreviewKeyEvent {event->
                 val native=event.nativeKeyEvent
                 val select=native.keyCode==android.view.KeyEvent.KEYCODE_DPAD_CENTER || native.keyCode==android.view.KeyEvent.KEYCODE_ENTER
-                // Not typing: arrows move between controls instead of being taken as cursor keys by the text field.
+                // Arrows move between controls instead of being taken as cursor keys. Up/Down always leave the
+                // (single-line) field: TV keyboards consume the Back that closes them, so "editing" can be stale.
                 val direction=remoteDirection(native.keyCode)
-                if(!editing && direction!=null) {if(native.action==android.view.KeyEvent.ACTION_DOWN) focusManager.moveFocus(direction);true}
+                val vertical=direction==FocusDirection.Up || direction==FocusDirection.Down
+                if(direction!=null && (vertical || !editing)) {if(native.action==android.view.KeyEvent.ACTION_DOWN) {editing=false;pendingSelectKey=0;keyboard?.hide();focusManager.moveFocus(direction)};true}
                 else if(!select || editing) false else when(native.action) {
                     android.view.KeyEvent.ACTION_DOWN -> {if(pendingSelectKey==0) pendingSelectKey=native.keyCode;true}
                     android.view.KeyEvent.ACTION_UP -> {val pending=pendingSelectKey==native.keyCode;pendingSelectKey=0;if(pending && !native.isCanceled) editing=true;pending}

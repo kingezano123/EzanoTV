@@ -61,7 +61,8 @@ import java.time.format.DateTimeFormatter
             val native = event.nativeKeyEvent
             val select = native.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || native.keyCode == android.view.KeyEvent.KEYCODE_ENTER
             val direction = remoteDirection(native.keyCode)
-            if (!editing && direction != null) { if (native.action == android.view.KeyEvent.ACTION_DOWN) focus.moveFocus(direction); true }
+            val vertical = direction == androidx.compose.ui.focus.FocusDirection.Up || direction == androidx.compose.ui.focus.FocusDirection.Down
+            if (direction != null && (vertical || !editing)) { if (native.action == android.view.KeyEvent.ACTION_DOWN) { editing = false; pendingSelectKey = 0; keyboard?.hide(); focus.moveFocus(direction) }; true }
             else if (!select) false else when (native.action) {
                 android.view.KeyEvent.ACTION_DOWN -> { if (pendingSelectKey == 0) pendingSelectKey = native.keyCode; true }
                 android.view.KeyEvent.ACTION_UP -> {
