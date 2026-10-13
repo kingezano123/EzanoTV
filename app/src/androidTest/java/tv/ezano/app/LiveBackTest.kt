@@ -60,7 +60,9 @@ class LiveBackTest {
     private fun intoChannelRows(label: String, checks: SoftChecks, key: Int): String? {
         for (i in 0 until 12) {
             (if (i == 0) focusedAmong(names) else focusedChannel())?.let { route(label, "dpad", "$i presses, focus: $it"); return it }
-            press(if (onProgramCell()) KeyEvent.KEYCODE_DPAD_LEFT else key, 500)
+            // [key] once (e.g. RIGHT out of the group column), then Down: Right from a group beside the preview
+            // lands on the Earlier/Now/Later chips, and only Down leads on into the rows.
+            press(if (onProgramCell()) KeyEvent.KEYCODE_DPAD_LEFT else if (i == 0) key else KeyEvent.KEYCODE_DPAD_DOWN, 500)
         }
         checks.check(false, "$label: the D-pad never reached a channel row (focus: ${focused()})")
         return null
