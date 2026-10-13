@@ -35,6 +35,15 @@ internal fun uiKey(value: Any?): Any = UiIdentity(value)
     return result
 }
 
+/** Like [uiPendingListState], but a new filter keeps showing the previous result until the new one is ready:
+ * the list (and the control the remote is on) never disappears behind a loading spinner. Null only at first load.
+ */
+@Composable internal fun <T> uiRetainedListState(vararg keys: Any?, compute: suspend () -> List<T>): State<List<T>?> {
+    val result = remember { mutableStateOf<List<T>?>(null, referentialEqualityPolicy()) }
+    LaunchedEffect(*keys) { result.value = withContext(Dispatchers.Default) { compute() } }
+    return result
+}
+
 @Composable internal fun <T> uiListState(vararg keys: Any?, compute: suspend () -> List<T>): State<List<T>> {
     val result = remember { mutableStateOf<List<T>>(emptyList(), referentialEqualityPolicy()) }
     LaunchedEffect(*keys) { result.value = withContext(Dispatchers.Default) { compute() } }

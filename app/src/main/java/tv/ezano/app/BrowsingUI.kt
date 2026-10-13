@@ -131,7 +131,7 @@ import java.time.format.DateTimeFormatter
     var genre by remember(kind) {mutableStateOf("")}
     var categories by remember {mutableStateOf(false)}
     val settled=settledQuery(query)
-    val results by uiPendingListState<Channel>(uiKey(all),group,provider,settled,genre) {
+    val results by uiRetainedListState<Channel>(uiKey(all),group,provider,settled,genre) {
         val regex=genre.takeIf {it.isNotEmpty() && it!="__all"}?.let {Regex(it,RegexOption.IGNORE_CASE)}
         if(group.isEmpty() && provider.isEmpty() && settled.isEmpty() && regex==null) all
         else all.searchCatalog {(group.isEmpty() || it.group==group) && (provider.isEmpty() || it.provider==provider) && (settled.isEmpty() || it.name.contains(settled,true) || it.group.contains(settled,true)) && (regex==null || regex.containsMatchIn("${it.genre} ${it.group}"))}
@@ -222,7 +222,7 @@ import java.time.format.DateTimeFormatter
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = System.currentTimeMillis() } }
     val settled = settledQuery(query)
-    val results by uiPendingListState<Channel>(uiKey(all), group, settled, events, s.favorites, s.groups) {
+    val results by uiRetainedListState<Channel>(uiKey(all), group, settled, events, s.favorites, s.groups) {
         if(events) all else all.searchCatalog { (group.isEmpty() || (group == "__favorites" && it.id in s.favorites) || it.group == group || it.id in s.groups[group].orEmpty()) && (settled.isBlank() || it.name.contains(settled, true)) }
     }
     val channels = results.orEmpty()
