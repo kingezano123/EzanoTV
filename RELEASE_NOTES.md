@@ -16,6 +16,9 @@ Ezano TV 0.5.2 adds automatic update prompts, separate favorites for channels an
 
 ### Live TV
 - Back from a channel returns to the same place in the guide: same group or search, scrolled to that channel, and with it selected. If you changed channels with the number keys, you land on the last one you watched.
+- Choosing a channel group or typing a search keeps your place, with no blank loading screen. Pressing Right from the group list goes straight into the channels. Movies and Shows categories behave the same way.
 
 ### Polish
 - A clearer highlight on the top bar, which now fits six tabs.
+
+Verified on an Android TV emulator (Android 11, 1080p) using only the remote. All 21 device checks pass, covering Live TV Back, favorites, the update prompt, playback and reopening. Opening speed is unchanged: about 2.9 s from a cold start to Home and about 0.85 s to reopen.
