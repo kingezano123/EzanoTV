@@ -8,7 +8,7 @@ Ezano TV 0.5.1 fixes remote navigation on Home and in the playlist form, and mak
 - **Down from the top bar now reaches Home.** In 0.5.0 the full-screen Home sat underneath the floating bar, so the remote's Down press found nothing and stayed on "Home". Down from any tab or icon now goes to Home's main button: Play on the billboard, or Add a playlist on a new install.
 - **New install:** "Add a playlist" is already selected, so one press of OK starts setup. The playlist window and editor also open with their first button selected.
 - **Playlist form with the remote:** moving down the form no longer pops up the keyboard on every field. Press OK on a field to type, Back to close the keyboard, then Down to continue to Connect & import.
-- **Back from a video** returns to the same place: same page, row, search and filters, with the selection where you left it. The browsing screens stay ready underneath playback instead of being rebuilt.
+- **Back from a video** returns to the page you were on, with its scroll position, search and filters intact, because the browsing screens stay ready underneath playback instead of being rebuilt. On Home, the title you just watched appears on the billboard with **Resume** selected.
 - **After importing a playlist** you land on Home with its new content selected, instead of an empty Live TV page for movie-only playlists.
 - The top bar turns solid as soon as Home scrolls, and selecting the billboard scrolls back to the top, so nothing overlaps the logo.
 - "Subtitles off" now also turns live captions off until you turn them back on.
