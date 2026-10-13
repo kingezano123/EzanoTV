@@ -65,6 +65,13 @@ jobs:
           ffmpeg -loglevel error -y -i test-media/sintel-trailer.mp4 -t 25 -c:v libx264 -preset ultrafast -b:v 1200k -c:a aac -b:a 128k -f mpegts test-media/fixture.ts
           ls -la test-media
 
+      - name: Fetch the previous device-check summary (metrics comparison)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$OUT"
+          gh release download device-check -R "$GITHUB_REPOSITORY" -p summary.md -O "$OUT/previous-summary.md" --clobber || echo "no previous summary"
+
       - name: Start fixture servers
         run: |
           nohup node tools/fixture-server.cjs > "$OUT/fixture-8765.log" 2>&1 &
@@ -74,6 +81,7 @@ jobs:
           curl -fsS 'http://127.0.0.1:8765/player_api.php?username=test&password=test' && echo
           curl -fsS 'http://127.0.0.1:8766/player_api.php?username=test&password=test' && echo
           curl -fsS 'http://127.0.0.1:8769/player_api.php?username=test&password=test' && echo
+          curl -fsS 'http://127.0.0.1:8769/update.json' && echo
 
       - name: Build debug and test APKs
         run: |

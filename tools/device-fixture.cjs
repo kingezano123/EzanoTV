@@ -21,13 +21,21 @@ const movies=[
 ].map(([name,year,certification,meta],i)=>({stream_id:101+i,name,year:String(year),certification,...meta,rating:(8.6-i*0.1).toFixed(1),category_id:certification==='PG-13'||name.includes('Wicked')?'11':'10',stream_icon:`${base}/art/${art[i%4]}.jpg`,container_extension:'mp4',plot:`Device-check fixture title ${i+1}. Video is the Sintel open-film trailer.`}));
 const series=[['Bluey',2018,'TV-Y'],['Peppa Pig',2004,'TV-Y'],['PAW Patrol',2013,'TV-Y'],['SpongeBob SquarePants',1999,'TV-Y7'],['Wednesday',2022,'TV-14']]
  .map(([name,year,certification],i)=>({series_id:201+i,name:`EN - ${name}`,year:String(year),certification,language:'en',country:'US',genre:certification==='TV-14'?'Comedy, Fantasy':'Animation, Kids',rating:(8.4-i*0.1).toFixed(1),category_id:certification==='TV-14'?'21':'20',cover:`${base}/art/${art[(i+1)%4]}.jpg`,plot:'Device-check fixture series.'}));
-const live=['UK Channel 1','UK Channel 2','Kids Channel','Film Channel','News Channel','Sports Channel'].map((name,i)=>({stream_id:301+i,name,category_id:i===2?'31':'30',stream_icon:`${base}/art/${art[i%4]}.jpg`,epg_channel_id:`dc${i+1}`,tv_archive:0}));
+// 14 channels so the guide scrolls (LiveBackTest checks Back lands on a row below the fold); 2 are in "UK | Kids".
+const liveKids=new Set(['Kids Channel','Kids Cartoons']);
+const live=['UK Channel 1','UK Channel 2','Kids Channel','Film Channel','News Channel','Sports Channel','Music Channel','Documentary Channel','Comedy Channel','UK Channel 3','Kids Cartoons','Science Channel','History Channel','Nature Channel']
+ .map((name,i)=>({stream_id:301+i,name,category_id:liveKids.has(name)?'31':'30',stream_icon:`${base}/art/${art[i%4]}.jpg`,epg_channel_id:`dc${i+1}`,tv_archive:0}));
 const cats={live:[{category_id:'30',category_name:'UK | Entertainment'},{category_id:'31',category_name:'UK | Kids'}],vod:[{category_id:'10',category_name:'EN | Kids & Family'},{category_id:'11',category_name:'EN | Movies'}],series:[{category_id:'20',category_name:'EN | Kids Shows'},{category_id:'21',category_name:'EN | TV Shows'}]};
 const titles=['Morning stories','Around the world','Family favorites','Evening edition','Stories worth sharing','Animation showcase'];
+const updateApk=(()=>{const data=Buffer.from('Ezano device-check placeholder, not an APK\n'.repeat(64));return {data,sha256:require('crypto').createHash('sha256').update(data).digest('hex')}})();
 const stamp=ms=>new Date(ms).toISOString().replace(/[-:T]/g,'').slice(0,14)+' +0000';
 const server=http.createServer((req,res)=>{
  const u=new URL(req.url,base);const json=x=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(x))};
  if(u.pathname==='/health'){res.end('ok');return}
+ // In-app updater feed for UpdatePromptTest (debug builds read the override from SharedPreferences "updates"/"feed").
+ // The APK is a placeholder: the test never presses "Update now", and a real download would fail the sha256 check.
+ if(u.pathname==='/update.json'){json({versionCode:999,versionName:'9.9.9',apk:`${base}/update.apk`,sha256:updateApk.sha256,size:updateApk.data.length,notes:'Test update'});return}
+ if(u.pathname==='/update.apk'){res.writeHead(200,{'content-type':'application/vnd.android.package-archive','content-length':updateApk.data.length});res.end(updateApk.data);return}
  if(u.pathname==='/captions-en.vtt'){res.setHeader('content-type','text/vtt');res.end('WEBVTT\n\n00:00.000 --> 10:00.000\nDevice check English captions\n');return}
  if(u.pathname==='/player_api.php'){
   if(u.searchParams.get('username')!=='test'||u.searchParams.get('password')!=='test'){json({user_info:{auth:0}});return}

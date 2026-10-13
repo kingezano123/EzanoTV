@@ -31,7 +31,7 @@ import tv.ezano.app.DeviceCheck.waitForObject
  */
 class EndToEndTest {
     @get:Rule val failureArtifacts = FailureArtifacts()
-    private val navLabels = setOf("Home", "Live TV", "Movies", "Shows", "My stuff", "Search", "Playlists", "Recordings", "Settings")
+    private val navLabels = (DeviceCheck.NAV_TABS + DeviceCheck.NAV_ICONS).toSet()
     private val heroButtons = setOf("Play", "Resume", "More info")
     private val homeMarkers = arrayOf("More info", "Popular kids movies", "Family picks", "Kids & family shows")
 
@@ -43,7 +43,7 @@ class EndToEndTest {
             // Up until any nav tab has focus.
             for (i in 0 until 8) { if (navLabels.any { focusedOn(it) }) break; press(KeyEvent.KEYCODE_DPAD_UP) }
         }
-        val order = listOf("Home", "Live TV", "Movies", "Shows", "My stuff")
+        val order = DeviceCheck.NAV_TABS
         val current = order.firstOrNull { focusedOn(it) }
         val key = if (current != null && order.indexOf(current) > order.indexOf(label)) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         val presses = DeviceCheck.dpadToText(label, key, 6)
@@ -220,7 +220,7 @@ class EndToEndTest {
                 val poster = device.findObject(By.textStartsWith("Inside Out 2")) ?: device.findObject(By.textStartsWith("Moana 2"))
                 checks.check(poster != null, "No fixture poster on Home to open"); poster?.click(); route("e2e: open details", "touch-fallback")
             }
-            checks.check(waitFor(10_000) { has(By.text("Add to my list")) || has(By.text("In my list")) } != null, "Details dialog did not open")
+            checks.check(waitFor(10_000) { listOf("Add to favorites", "In favorites", "Add to my list", "In my list").any { has(By.text(it)) } } != null, "Details dialog did not open")
             SystemClock.sleep(1800); note("details focus: ${focused()}"); shot("09-details")
 
             // ---- Playback ----

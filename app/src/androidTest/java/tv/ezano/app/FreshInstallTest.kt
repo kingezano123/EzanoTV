@@ -25,7 +25,7 @@ import tv.ezano.app.DeviceCheck.store
  */
 class FreshInstallTest {
     @get:Rule val failureArtifacts = FailureArtifacts()
-    private val navTabs = listOf("Home", "Live TV", "Movies", "Shows", "My stuff")
+    private val navTabs = DeviceCheck.NAV_TABS
     private fun navFocused() = navTabs.any { focusedOn(it) }
 
     @Test fun freshHomeReachesAddPlaylistWithRemote() {

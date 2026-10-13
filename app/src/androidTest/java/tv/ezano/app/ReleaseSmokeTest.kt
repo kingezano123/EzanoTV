@@ -43,5 +43,5 @@ class ReleaseSmokeTest {
         val permissions=context.packageManager.getPackageInfo(context.packageName,android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty()
         assertFalse(permissions.contains("android.permission.RECORD_AUDIO"))
     }
-    @Test fun releaseReopensSavedLibrary(){launch();assertTrue(device.wait(Until.hasObject(By.text("Resume")),10000));assertTrue(device.wait(Until.hasObject(By.text("My stuff")),10000));device.takeScreenshot(File(context.externalMediaDirs.first(),"release-home-031.png"))}
+    @Test fun releaseReopensSavedLibrary(){launch();assertTrue(device.wait(Until.hasObject(By.text("Resume")),10000));assertTrue(device.wait(Until.hasObject(By.text("Favorite channels")),10000));device.takeScreenshot(File(context.externalMediaDirs.first(),"release-home-031.png"))}
 }

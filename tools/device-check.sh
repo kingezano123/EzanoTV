@@ -97,6 +97,18 @@ done
 adb shell am force-stop "$PKG"
 pull_files host
 
+# 0.5.2 features, on the fixture library (each test re-seeds it through the store if it is missing).
+FEED=http://10.0.2.2:8769/update.json
+run_step 07a-live-back       keep "Live TV: Back returns to the same channel row (plain, number-key zap, group, search)" -e class $C.LiveBackTest
+run_step 07b-favorites       keep "Favorites: details toggle, long-press channel, Favorite movies/shows + Favorite channels tabs" -e class $C.FavoritesTest
+run_step 07c-update-prompt   keep "Updater: override feed shows Update available; Later; Settings Check now" -e class $C.UpdatePromptTest#promptFromOverrideFeed
+run_step 07d-update-playback keep "Updater: no prompt over playback"                   -e class $C.UpdatePromptTest#noPromptDuringPlayback
+run_step 07e-updfeed-cold1   keep "Cold start 1 with the update feed override"        -e class $C.ReopenTest#coldStart -e label updfeed -e run 1 -e updateFeed $FEED
+run_step 07f-updfeed-cold2   keep "Cold start 2 with the update feed override"        -e class $C.ReopenTest#coldStart -e label updfeed -e run 2 -e updateFeed $FEED
+run_step 07g-noupdate-cold1  keep "Cold start 1, no override (real feed)"             -e class $C.ReopenTest#coldStart -e label noupdate -e run 1 -e updateFeed none
+run_step 07h-noupdate-cold2  keep "Cold start 2, no override (real feed)"             -e class $C.ReopenTest#coldStart -e label noupdate -e run 2 -e updateFeed none
+run_step 07i-update-quiet    keep "Updater: no override, no error, Home responsive"   -e class $C.UpdatePromptTest#noOverrideStaysQuiet
+
 run_step 08-large-seed  clear "Import large fixture (76,000 titles, 64,000 programs)" -e class $C.ReopenTest#seedLarge
 run_step 09-large-cold  keep  "Cold start with large library"               -e class $C.ReopenTest#coldStart -e label large -e run 1 -e shot 15-large-reopen
 run_step 10-device      clear "DeviceTest (import, playback, recording, D-pad)" -e class $C.DeviceTest

@@ -94,11 +94,17 @@ for(const t of all)md+=`| ${t.step.name} | ${t.cls?.replace('tv.ezano.app.','')}
 if(failed.length){md+='\n## Failures\n\n';for(const t of failed)md+=`### ${t.cls?.replace('tv.ezano.app.','')}#${t.name} (${t.step.name})\n\n\`\`\`\n${t.stack.split('\n').slice(0,18).join('\n')}\n\`\`\`\n\n`}
 const fails=events.filter(e=>e.kind==='FAIL');
 if(fails.length){md+='\n## Individual check failures (soft checks: the test kept going)\n\n';for(const e of fails)md+=`- [${e.step}] ${e.msg}\n`}
+// Previous run's metrics (the summary.md the workflow fetched from the release before this run), for comparison.
+const prevText=read(path.join(out,'previous-summary.md'));
+const prev={};for(const l of prevText.split('\n')){const m=/^\| (\w+) \| ([^|]+?) \| [^|]+ \|/.exec(l);if(m&&/_ms$|_titles$|_programs$/.test(m[1]))prev[m[1]]=m[2].trim()}
+const prevCommit=(/^- Commit: (\S+)/m.exec(prevText)||[])[1];
 md+='\n## Startup and reopen times (ms)\n\n';
+if(prevCommit)md+=`Previous run for comparison: ${prevCommit.slice(0,12)} (the device-check release before this run).\n\n`;
 if(metrics.length){
-  md+='| Metric | Value | Source |\n|---|---|---|\n';for(const m of metrics){const [k,v]=m.text.split('=');md+=`| ${k} | ${v} | ${m.step} |\n`}
-  const avg=re=>{const v=metrics.map(m=>m.text.split('=')).filter(([k,v])=>re.test(k)&&/^\d+$/.test(v)).map(([,v])=>+v);return v.length?`${Math.round(v.reduce((a,b)=>a+b,0)/v.length)} ms (n=${v.length}, min ${Math.min(...v)}, max ${Math.max(...v)})`:'n/a'};
-  md+=`\n- Fixture cold start, process start to Home content: ${avg(/^fixture_cold\d+_process_to_home_ms$/)}\n- Fixture cold start, launch to Home content: ${avg(/^fixture_cold\d+_launch_to_home_ms$/)}\n- Fixture cold start, first frame (am start -W): ${avg(/^fixture_cold\d+_first_frame_ms$/)}\n- Host launcher cold start, first frame: ${avg(/^host_cold\d+_first_frame_ms$/)}\n- Warm reopen (HOME then relaunch) to Home content: ${avg(/^warm\d+_launch_to_home_ms$/)}\n- Large library (76,000 titles) cold start, process start to Home: ${avg(/^large_cold\d+_process_to_home_ms$/)}\n`;
+  md+='| Metric | Value | Source | Previous run |\n|---|---|---|---|\n';for(const m of metrics){const [k,v]=m.text.split('=');md+=`| ${k} | ${v} | ${m.step} | ${prev[k]??''} |\n`}
+  const stats=v=>v.length?`${Math.round(v.reduce((a,b)=>a+b,0)/v.length)} ms (n=${v.length}, min ${Math.min(...v)}, max ${Math.max(...v)})`:'n/a';
+  const avg=re=>{const v=metrics.map(m=>m.text.split('=')).filter(([k,v])=>re.test(k)&&/^\d+$/.test(v)).map(([,v])=>+v);const p=Object.entries(prev).filter(([k,v])=>re.test(k)&&/^\d+$/.test(v)).map(([,v])=>+v);return stats(v)+(p.length?`; previous run ${stats(p)}`:'')};
+  md+=`\n- Fixture cold start, process start to Home content: ${avg(/^fixture_cold\d+_process_to_home_ms$/)}\n- Fixture cold start, launch to Home content: ${avg(/^fixture_cold\d+_launch_to_home_ms$/)}\n- Fixture cold start, first frame (am start -W): ${avg(/^fixture_cold\d+_first_frame_ms$/)}\n- Host launcher cold start, first frame: ${avg(/^host_cold\d+_first_frame_ms$/)}\n- Warm reopen (HOME then relaunch) to Home content: ${avg(/^warm\d+_launch_to_home_ms$/)}\n- Large library (76,000 titles) cold start, process start to Home: ${avg(/^large_cold\d+_process_to_home_ms$/)}\n- Cold start with the update feed override, process start to Home: ${avg(/^updfeed_cold\d+_process_to_home_ms$/)}\n- Cold start without override (real update feed), process start to Home: ${avg(/^noupdate_cold\d+_process_to_home_ms$/)}\n- First D-pad response after cold start (all labels): ${avg(/_cold\d+_first_dpad_response_ms$/)}\n- D-pad response while the real update feed is checked: ${avg(/^update_none_dpad_response_avg_ms$/)}\n`;
 }else md+='No metrics recorded.\n';
 const routes=events.filter(e=>e.kind==='ROUTE');
 md+='\n## How each user step was performed\n\n`dpad` = remote keys only; `touch-fallback` = the remote could not do it, so the test tapped; `direct` = activity/store API.\n\n';
