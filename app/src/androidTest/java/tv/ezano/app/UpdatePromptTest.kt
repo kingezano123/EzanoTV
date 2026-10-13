@@ -25,7 +25,7 @@ import tv.ezano.app.DeviceCheck.waitFor
 /**
  * In-app updater. Debug builds read an override feed from SharedPreferences("updates")/"feed"; the device
  * fixture serves /update.json (versionCode 999, "9.9.9"). tools/device-check.sh runs each method in its own
- * `am instrument` (new app process), because the check runs once, ~4 s after Home appears.
+ * `am instrument` (new app process), because the check runs once, ~6 s after the library is open.
  */
 class UpdatePromptTest {
     @get:Rule val failureArtifacts = FailureArtifacts()
@@ -74,8 +74,8 @@ class UpdatePromptTest {
         try {
             val homeAt = launchToHome()
             scenario.use { DeviceCheck.capturing("UpdatePromptTest") {
-                val shown = waitFor(15_000) { prompt() }
-                checks.check(shown != null, "\"Update available\" did not appear within 15 s of Home with the fixture feed (versionCode 999)")
+                val shown = waitFor(25_000) { prompt() }
+                checks.check(shown != null, "\"Update available\" did not appear within 25 s of Home with the fixture feed (versionCode 999)")
                 if (shown != null) metric("update_prompt_after_home_ms", SystemClock.elapsedRealtime() - homeAt)
                 if (shown == null) { shot("20-update-prompt"); return@capturing }
                 SystemClock.sleep(800)
@@ -130,7 +130,7 @@ class UpdatePromptTest {
                 route("updater: start playback before the update check", "direct", "MainActivity.play(${channel.name})")
                 checks.check(waitFor(30_000, 200) { act { it.fullPlayer && it.player?.playbackState == Player.STATE_READY } } != null, "Live playback did not reach READY")
                 var seen = false
-                val until = SystemClock.elapsedRealtime() + 14_000
+                val until = SystemClock.elapsedRealtime() + 22_000
                 while (SystemClock.elapsedRealtime() < until) { if (prompt()) { seen = true; break }; SystemClock.sleep(250) }
                 checks.check(!seen, "\"Update available\" appeared over full-screen playback")
                 shot("20d-update-not-during-playback")
@@ -138,8 +138,8 @@ class UpdatePromptTest {
                 device.pressBack()
                 waitFor(8_000) { act { !it.fullPlayer && it.player == null } }
                 route("updater: leave playback", "dpad", "BACK")
-                val after = waitFor(15_000) { prompt() }
-                note("update prompt after leaving playback: ${after?.let { "shown after $it ms" } ?: "not shown within 15 s"}")
+                val after = waitFor(20_000) { prompt() }
+                note("update prompt after leaving playback: ${after?.let { "shown after $it ms" } ?: "not shown within 20 s"}")
                 if (after != null) { SystemClock.sleep(600); shot("20e-update-after-playback"); pressLater("updater: after playback", checks) }
             } }
         } finally { removeOverride() }
@@ -156,9 +156,9 @@ class UpdatePromptTest {
         val homeAt = launchToHome()
         scenario.use { DeviceCheck.capturing("UpdateNoOverride") {
             SystemClock.sleep(1500)
-            // Responsiveness while the real feed is being fetched (~4-6 s after Home).
+            // Responsiveness while the real feed is being fetched (library open + ~6 s after Home).
             val samples = ArrayList<Long>()
-            while (SystemClock.elapsedRealtime() - homeAt < 9_000) {
+            while (SystemClock.elapsedRealtime() - homeAt < 14_000) {
                 val before = focused()
                 val at = SystemClock.elapsedRealtime()
                 device.pressKeyCode(if (samples.size % 2 == 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT)
