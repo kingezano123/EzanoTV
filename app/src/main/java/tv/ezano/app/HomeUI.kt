@@ -28,7 +28,7 @@ import kotlinx.coroutines.*
     val enteringSearch=a.focusCatalogSearch
     LaunchedEffect(a.page) {if(!a.focusImportedChannel && !enteringSearch && !a.focusCatalogSearch) {inputMode.requestInputMode(InputMode.Keyboard);runCatching {first.requestFocus()}} }
     // On Home the bar floats over the full-screen artwork, like Disney+; other pages keep a solid bar.
-    val navBackground=if(a.page=="Home" && !a.homeScrolled) Brush.verticalGradient(listOf(Color.Black.copy(.82f),Color.Black.copy(.35f),Color.Transparent)) else Brush.verticalGradient(listOf(Color.Black,Color.Black.copy(.97f)))
+    val navBackground=if(a.page=="Home" && !a.homeScrolled) Brush.verticalGradient(listOf(Color.Black.copy(.82f),Color.Black.copy(.35f),Color.Transparent)) else Brush.verticalGradient(listOf(Color.Black,Color.Black))
     Row(Modifier.fillMaxWidth().height(if(a.page=="Home") 84.dp else 66.dp).background(navBackground).padding(horizontal=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
         Text("EZANO",color=Color.White,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp,modifier=Modifier.padding(end=18.dp))
         listOf("Home" to "Home","Live TV" to "Live TV","Movies" to "Movies","Series" to "Shows","My list" to "My stuff").forEachIndexed {i,(page,label)->
