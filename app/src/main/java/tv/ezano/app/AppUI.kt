@@ -47,7 +47,8 @@ import java.time.format.DateTimeFormatter
                         "Movies"->CatalogScreen(a,Kind.MOVIE,{details=it},movieSearchFocus)
                         "Series"->CatalogScreen(a,Kind.SERIES,{details=it},movieSearchFocus)
                         "Search"->SearchScreen(a,{details=it},{c,p->program=c to p})
-                        "My list"->SavedScreen(a) {details=it}
+                        "My list"->SavedScreen(a,titles=false) {details=it}
+                        "Saved"->SavedScreen(a,titles=true) {details=it}
                         "Recordings"->RecordingsScreen(a)
                         "Settings"->SettingsScreen(a) {providerModal=true}
                     } }
@@ -70,17 +71,21 @@ import java.time.format.DateTimeFormatter
     Column(Modifier.padding(top=10.dp,bottom=6.dp)) { Row(Modifier.padding(start=28.dp,end=28.dp,bottom=8.dp),verticalAlignment=Alignment.CenterVertically) { Text(title,fontSize=18.sp,color=Color.White,fontWeight=FontWeight.Bold); Spacer(Modifier.weight(1f)); if(subtitle.isNotBlank()) Text(subtitle,color=Muted,fontSize=10.sp) }; LazyRow(contentPadding=PaddingValues(horizontal=25.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) { items(items,key={it.id}) {c->Poster(c,favorite=c.id in favorites,portrait=portrait,onClick={onDetails(c)})} } }
 }
 @Composable fun EmptyState(title: String,body: String,onConnect: ()->Unit) { Column(Modifier.fillMaxWidth().padding(vertical=40.dp),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(14.dp)) { Icon(Icons.Outlined.Tv,null,Modifier.size(43.dp),tint=LocalAccent.current); Text(title,fontSize=22.sp,fontWeight=FontWeight.SemiBold,color=Color.White); Text(body,fontSize=12.sp,color=Muted); EzButton("Manage playlists",primary=true,onClick=onConnect) } }
-@Composable fun SavedScreen(a: MainActivity,onDetails: (Channel)->Unit) {
-    val s by a.store.libraryState();val real=visibleCatalog(a);var group by remember {mutableStateOf("Favorites")}
-    val saved by uiListState<Channel>(uiKey(real),group,s.favorites,s.groups){val ids=if(group=="Favorites")s.favorites else s.groups[group].orEmpty().toSet();real.searchCatalog {it.id in ids}}
-    val sections by uiListState<Pair<Kind,List<Channel>>>(uiKey(saved)){listOf(Kind.LIVE,Kind.MOVIE,Kind.SERIES).map {kind->kind to saved.searchCatalog {it.kind==kind}}.filter {it.second.isNotEmpty()}}
+/** Favorite channels (with the viewer's channel groups), or favorite movies and shows, as two separate tabs. */
+@Composable fun SavedScreen(a: MainActivity,titles: Boolean,onDetails: (Channel)->Unit) {
+    val s by a.store.libraryState();val real=visibleCatalog(a);var group by remember(titles) {mutableStateOf("Favorites")}
+    val kinds=if(titles) listOf(Kind.MOVIE,Kind.SERIES) else listOf(Kind.LIVE)
+    val saved by uiListState<Channel>(uiKey(real),group,s.favorites,s.groups,titles){val ids=if(group=="Favorites")s.favorites else s.groups[group].orEmpty().toSet();real.searchCatalog {it.id in ids && it.kind in kinds}}
+    val sections by uiListState<Pair<Kind,List<Channel>>>(uiKey(saved)){kinds.map {kind->kind to saved.searchCatalog {it.kind==kind}}.filter {it.second.isNotEmpty()}}
     Column(Modifier.fillMaxSize().padding(horizontal=28.dp)) {
-        Heading("My stuff", "Your favorite channels, movies and shows")
-        LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=5.dp)){item{EzButton("Favorites",selected=group=="Favorites",onClick={group="Favorites"})};items(s.groups.keys.toList()){g->EzButton(g,selected=group==g,onClick={group=g})}}
-        Spacer(Modifier.height(14.dp));if(saved.isEmpty())Text("Add channels and titles to your list to find them here.",color=Muted,fontSize=12.sp)
+        if(titles) Heading("Favorite movies & shows","Open any movie or show and choose Add to favorites")
+        else Heading("Favorite channels","Long-press a channel in Live TV to add it to your favorites")
+        if(!titles) LazyRow(horizontalArrangement=Arrangement.spacedBy(8.dp),contentPadding=PaddingValues(vertical=5.dp)){item{EzButton("Favorites",selected=group=="Favorites",onClick={group="Favorites"})};items(s.groups.keys.toList()){g->EzButton(g,selected=group==g,onClick={group=g})}}
+        Spacer(Modifier.height(14.dp))
+        if(saved.isEmpty()) Text(if(titles) "No favorite movies or shows yet. Select a title, then Add to favorites." else "No favorite channels yet. Long-press a channel in Live TV and choose Favorite.",color=Muted,fontSize=13.sp)
         LazyVerticalGrid(GridCells.Adaptive(118.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(14.dp),contentPadding=PaddingValues(bottom=30.dp)){
             sections.forEach {(kind,list)->
-                item(span={GridItemSpan(maxLineSpan)}){Text(when(kind){Kind.LIVE->"Favorite channels";Kind.MOVIE->"Movies";else->"Shows"},color=Color.White,fontSize=16.sp,fontWeight=FontWeight.SemiBold,modifier=Modifier.padding(top=8.dp))}
+                item(span={GridItemSpan(maxLineSpan)}){Text(when(kind){Kind.LIVE->"Channels";Kind.MOVIE->"Movies";else->"Shows"},color=Color.White,fontSize=18.sp,fontWeight=FontWeight.Bold,modifier=Modifier.padding(top=8.dp))}
                 items(list.size,key={list.catalogLabel(it).id}){index->if(kind==Kind.LIVE)FavoriteChannel(list,index,{a.play(it)},onDetails)else CatalogPoster(list,index,s.favorites,portrait=true,onDetails=onDetails)}
             }
         }

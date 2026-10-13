@@ -110,7 +110,7 @@ import java.time.format.DateTimeFormatter
         if(c.provider=="demo") Text("Playable open film demo · Blender Foundation · CC BY 3.0",color=Muted,fontSize=10.sp)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             EzButton(if((s.positions[c.id]?:0)>0 || resumeEpisode!=null) "Resume" else "Watch",Icons.Outlined.PlayArrow,primary=true,modifier=Modifier.focusRequester(watchFocus),onClick={if(failure.isNotBlank() && c.kind==Kind.SERIES){pendingWatch=true;a.scope.launch {loadEpisodes()}}else watch()})
-            EzButton(if(c.id in s.favorites) "In my list" else "Add to my list",Icons.Outlined.BookmarkBorder,onClick={a.store.favorite(c)})
+            EzButton(if(c.id in s.favorites) "In favorites" else "Add to favorites",if(c.id in s.favorites) Icons.Outlined.Star else Icons.Outlined.StarBorder,onClick={a.store.favorite(c)})
             EzButton("Options",Icons.Outlined.MoreHoriz,onClick={options=!options})
         }
         if(loading) Text("Loading episodes…",color=Muted,fontSize=12.sp);if(failure.isNotBlank()) Text(failure,color=Color(0xFFFF8592),fontSize=12.sp)

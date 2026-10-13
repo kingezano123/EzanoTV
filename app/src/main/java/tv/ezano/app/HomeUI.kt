@@ -29,21 +29,21 @@ import kotlinx.coroutines.*
     LaunchedEffect(a.page) {if(!a.focusImportedChannel && !enteringSearch && !a.focusCatalogSearch) {inputMode.requestInputMode(InputMode.Keyboard);runCatching {first.requestFocus()}} }
     // On Home the bar floats over the full-screen artwork, like Disney+; other pages keep a solid bar.
     val navBackground=if(a.page=="Home" && !a.homeScrolled) Brush.verticalGradient(listOf(Color.Black.copy(.82f),Color.Black.copy(.35f),Color.Transparent)) else Brush.verticalGradient(listOf(Color.Black,Color.Black))
-    Row(Modifier.fillMaxWidth().height(if(a.page=="Home") 84.dp else 66.dp).background(navBackground).padding(horizontal=30.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(7.dp)) {
-        Text("EZANO",color=Color.White,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp,modifier=Modifier.padding(end=18.dp))
-        listOf("Home" to "Home","Live TV" to "Live TV","Movies" to "Movies","Series" to "Shows","My list" to "My stuff").forEachIndexed {i,(page,label)->
+    Row(Modifier.fillMaxWidth().height(if(a.page=="Home") 84.dp else 66.dp).background(navBackground).padding(horizontal=28.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(3.dp)) {
+        Text("EZANO",color=Color.White,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,letterSpacing=1.sp,maxLines=1,modifier=Modifier.padding(end=12.dp))
+        listOf("Home" to "Home","Live TV" to "Live TV","Movies" to "Movies","Series" to "Shows","My list" to "Favorite channels","Saved" to "Favorite movies/shows").forEachIndexed {i,(page,label)->
             var focused by remember {mutableStateOf(false)}
             val selected=a.page==page
-            Column((if(selected || (a.page !in listOf("Home","Live TV","Movies","Series","My list") && i==0)) Modifier.focusRequester(first) else Modifier)
+            Column((if(selected || (a.page !in listOf("Home","Live TV","Movies","Series","My list","Saved") && i==0)) Modifier.focusRequester(first) else Modifier)
                 // Down from the bar always lands on Home's main control instead of relying on geometric search.
                 .focusProperties {if(a.page=="Home") down=if(a.homeEntryReady) a.homeEntry else a.homeContent}
                 .onPreviewKeyEvent {event->
                     if(event.nativeKeyEvent.keyCode==android.view.KeyEvent.KEYCODE_DPAD_DOWN && event.nativeKeyEvent.action==android.view.KeyEvent.ACTION_DOWN && page in listOf("Movies","Series")) {
                         val action={a.page=page;a.focusCatalogSearch=true};if(page in s.prefs.lockedSections) a.admin(action) else action();true
                     } else false
-                }.onFocusChanged {focused=it.isFocused}.clip(RoundedCornerShape(3.dp)).background(if(focused) Color(0xFF252525) else Color.Transparent)
-                .clickable {if(page in s.prefs.lockedSections) a.admin {a.page=page} else a.page=page}.padding(horizontal=11.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                Text(label,color=if(selected||focused) Color.White else Color(0xFFCFCFCF),fontSize=12.sp,fontWeight=if(selected||focused) FontWeight.ExtraBold else FontWeight.SemiBold)
+                }.onFocusChanged {focused=it.isFocused}.clip(RoundedCornerShape(3.dp)).background(if(focused) Color.White.copy(.16f) else Color.Transparent)
+                .clickable {if(page in s.prefs.lockedSections) a.admin {a.page=page} else a.page=page}.padding(horizontal=9.dp,vertical=9.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                Text(label,color=if(selected||focused) Color.White else Color(0xFFCFCFCF),fontSize=12.sp,maxLines=1,softWrap=false,fontWeight=if(selected||focused) FontWeight.ExtraBold else FontWeight.SemiBold)
                 Box(Modifier.padding(top=5.dp).size(24.dp,2.dp).background(if(selected||focused) Color.White else Color.Transparent))
             }
         }

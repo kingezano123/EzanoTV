@@ -228,6 +228,21 @@ import java.time.format.DateTimeFormatter
     val channels = results.orEmpty()
     val listState = rememberLazyListState()
     val importedChannelFocus = remember { FocusRequester() }
+    // Back from a channel returns to the same spot in the guide: same filter, scrolled to it, its row focused.
+    val restoreFocus = remember { FocusRequester() }
+    var restoreId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(a.fullPlayer) {
+        if (a.fullPlayer || a.page != "Live TV") return@LaunchedEffect
+        val id = a.lastWatchedId ?: return@LaunchedEffect
+        a.lastWatchedId = null
+        val index = withContext(Dispatchers.Default) { (0 until channels.size).firstOrNull { channels.catalogLabel(it).id == id } } ?: return@LaunchedEffect
+        restoreId = id
+        listState.scrollToItem((index - 2).coerceAtLeast(0))
+        selected = withContext(Dispatchers.Default) { channels[index] }; selectedProgram = null
+        delay(160)
+        // The list may still be settling after playback; retry briefly until the row holds focus.
+        repeat(6) { if (runCatching { restoreFocus.requestFocus() }.isSuccess) return@LaunchedEffect; delay(120) }
+    }
     val inputMode = LocalInputModeManager.current
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(uiKey(channels)) { selected = withContext(Dispatchers.Default) {channels.firstOrNull()}; selectedProgram = null; listState.scrollToItem(0) }
@@ -296,7 +311,7 @@ import java.time.format.DateTimeFormatter
                             if(full!=null) action(full) else a.scope.launch {action(withContext(Dispatchers.Default) {channels[index]})}
                         }
                         GuideChannelRow(c, index + 1, c.id == selected?.id, c.id in s.favorites, programs, start, end, now,
-                            channelModifier = if (index == 0) Modifier.focusRequester(importedChannelFocus) else Modifier,
+                            channelModifier = if (label.id == restoreId) Modifier.focusRequester(restoreFocus) else if (index == 0) Modifier.focusRequester(importedChannelFocus) else Modifier,
                             onChannelFocus = { ready {selected = it; selectedProgram = null} }, onChannelClick = { ready(a::play) }, onChannelLongPress = { ready {favoritePrompt = it} },
                             onProgramFocus = { p -> ready {selected = it; selectedProgram = p} }, onProgramClick = { p -> ready {onProgram(it, p)} })
                     }

@@ -45,6 +45,8 @@ class MainActivity: ComponentActivity() {
     var focusHomeContent by mutableStateOf(false)
     /** Home has scrolled past the top of its billboard; the top bar turns solid so rows don't show through it. */
     var homeScrolled by mutableStateOf(false)
+    /** The title or channel last played, so Back from the player can land on it (Live TV guide row). */
+    var lastWatchedId by mutableStateOf<String?>(null)
     private var session: MediaSession?=null
     val scope=CoroutineScope(SupervisorJob()+Dispatchers.Main)
     private var playbackJob: Job?=null
@@ -95,7 +97,7 @@ class MainActivity: ComponentActivity() {
     fun startPlayback(c: Channel) {
         subtitleJob?.cancel();playbackJob?.cancel(); playbackJob=scope.launch { try {
             val resolved=withContext(Dispatchers.IO) { Sources.resolve(store.state.value.providers.firstOrNull { it.id==c.provider },c) }
-            savePosition(); session?.release(); player?.release();speech?.close();player=null; playing=c;captionsSuppressed=false
+            savePosition(); session?.release(); player?.release();speech?.close();player=null; playing=c;lastWatchedId=c.id;captionsSuppressed=false
             speech=if(speechEnabled() && SpeechModel.installed(this@MainActivity))SpeechCaptions(this@MainActivity) else null
             player=Playback.create(this@MainActivity,resolved,store.state.value.prefs.afr,subtitleLanguage=store.state.value.prefs.subtitleLanguage,autoSubtitles=store.state.value.prefs.autoSubtitles,speech=speech)
             if(c.kind!=Kind.LIVE) player?.seekTo(store.state.value.positions[c.id]?:0)
