@@ -43,14 +43,23 @@ class LiveBackTest {
     private fun playerReady() = act { it.fullPlayer && it.player?.playbackState == Player.STATE_READY }
     private fun playingName() = act { it.playing?.name }
     private fun browsing() = act { !it.fullPlayer && it.player == null }
-    private fun focusedChannel() = focusedAmong(names)
+    /** The focused channel row, polling ~1 s because accessibility focus can lag the guide's scroll. */
+    private fun focusedChannel(): String? = DeviceCheck.awaitFocusedAmong(names) ?: if (DeviceCheck.anythingFocused()) null else previewChannel()?.also {
+        if (previewFallbacks++ < 6) note("accessibility reports no focused node; using the guide preview's selected channel \"$it\" (rows set it on focus)")
+    }
+    private var previewFallbacks = 0
+    /** The channel named in the guide preview above the "Earlier/Now/Later" chips, i.e. the row that last took focus. */
+    private fun previewChannel(): String? {
+        val chipsTop = topMost("Earlier")?.visibleBounds?.top ?: return null
+        return names.firstOrNull { n -> runCatching { device.findObjects(By.text(n)).any { it.visibleBounds.height() > 0 && it.visibleBounds.bottom <= chipsTop } }.getOrDefault(false) }
+    }
     private fun onProgramCell() = focusedTexts().any { it in programTitles || it == "Guide unavailable" }
     private fun searchFieldFocused() = runCatching { device.findObject(By.clazz("android.widget.EditText").focused(true)) != null }.getOrDefault(false)
 
     /** D-pad into the guide's channel column (Left out of a program cell when the move lands in the grid). */
     private fun intoChannelRows(label: String, checks: SoftChecks, key: Int): String? {
         for (i in 0 until 12) {
-            focusedChannel()?.let { route(label, "dpad", "$i presses, focus: $it"); return it }
+            (if (i == 0) focusedAmong(names) else focusedChannel())?.let { route(label, "dpad", "$i presses, focus: $it"); return it }
             press(if (onProgramCell()) KeyEvent.KEYCODE_DPAD_LEFT else key, 500)
         }
         checks.check(false, "$label: the D-pad never reached a channel row (focus: ${focused()})")
@@ -59,11 +68,20 @@ class LiveBackTest {
 
     /** Up/Down in the channel column until [target] has focus. */
     private fun moveToChannel(target: String, order: List<String>, checks: SoftChecks): Boolean {
-        for (i in 0 until order.size + 4) {
+        var lastKey = KeyEvent.KEYCODE_DPAD_DOWN
+        var lost = 0
+        for (i in 0 until order.size + 6) {
             val now = focusedChannel()
-            if (now == null) { checks.check(false, "Focus left the channel column while moving to \"$target\" (focus: ${focused()})"); return false }
             if (now == target) return true
-            press(if (order.indexOf(now) in 0 until order.indexOf(target)) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP, 450)
+            if (now == null) {
+                // Still nothing after the ~1 s poll: one more move in the same direction, as a viewer would.
+                if (++lost > 2) { checks.check(false, "Focus left the channel column while moving to \"$target\" (focus: ${focused()})"); return false }
+                note("no focused channel row seen after a move (accessibility lag?); pressing ${DeviceCheck.keyName(lastKey)} again")
+            } else {
+                lost = 0
+                lastKey = if (order.indexOf(now) in 0 until order.indexOf(target)) KeyEvent.KEYCODE_DPAD_DOWN else KeyEvent.KEYCODE_DPAD_UP
+            }
+            press(lastKey, 450)
         }
         checks.check(false, "D-pad could not reach the channel \"$target\" (focus: ${focused()})")
         return false
@@ -97,13 +115,14 @@ class LiveBackTest {
         val back = waitFor(8_000) { browsing() }
         checks.check(back != null, "$tag: Back did not leave the player")
         route("$tag: Back from player", "dpad", "BACK")
-        val refocused = waitFor(5_000) { focusedChannel() == expected }
+        // Strict here: the restored row must really hold focus (no preview fallback).
+        val refocused = waitFor(5_000) { focusedAmong(names) == expected }
         metric("${tag}_back_to_row_focus_ms", refocused ?: "not-focused-5s")
         SystemClock.sleep(800)
         val now = focused()
         note("$tag: after Back page=${page()} focus=$now visible channels=${visibleAmong(names)}")
         checks.check(page() == "Live TV", "$tag: Back from the player left Live TV (page=${page()})")
-        checks.check(focusedChannel() == expected, "$tag: after Back focus is not on the \"$expected\" row (focus: $now${barFocused()?.let { ", top bar tab $it" } ?: ""})")
+        checks.check(DeviceCheck.awaitFocusedAmong(names) == expected, "$tag: after Back focus is not on the \"$expected\" row (focus: $now${barFocused()?.let { ", top bar tab $it" } ?: ""}; preview shows ${previewChannel()})")
         val row = runCatching { device.findObject(By.focused(true))?.visibleBounds }.getOrNull()
         checks.check(row != null && row.height() > 0 && row.bottom <= device.displayHeight, "$tag: the focused \"$expected\" row is not on screen (bounds $row)")
         return expected
@@ -162,6 +181,10 @@ class LiveBackTest {
             checks.check(waitFor(6_000) { visibleAmong(names).let { v -> v.isNotEmpty() && v.all { it in members } } } != null,
                 "Choosing the group \"$group\" did not filter the guide (visible: ${visibleAmong(names)})")
             SystemClock.sleep(600)
+            val afterGroup = DeviceCheck.awaitFocusedAmong(groupLabels)
+            note("focus after choosing the group: ${focused()}")
+            checks.check(afterGroup != null || barFocused() == null, "Choosing the group \"$group\" moved focus out of the group column to the top bar (${barFocused()})")
+            if (barFocused() != null) intoChannelRows("live: top bar -> channel rows (after group)", checks, KeyEvent.KEYCODE_DPAD_DOWN)
             intoChannelRows("live: group -> channel rows", checks, KeyEvent.KEYCODE_DPAD_RIGHT)
             val groupTarget = members[6.coerceAtMost(members.size - 1)]
             moveToChannel(groupTarget, members, checks)

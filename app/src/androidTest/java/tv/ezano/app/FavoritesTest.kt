@@ -117,11 +117,13 @@ class FavoritesTest {
             waitFor(20_000) { visibleAmong(liveNames.take(3)).isNotEmpty() }
             SystemClock.sleep(1000)
             for (i in 0 until 12) {
-                if (focusedAmong(liveNames) != null) break
+                if ((if (i == 0) focusedAmong(liveNames) else DeviceCheck.awaitFocusedAmong(liveNames)) != null) break
                 press(if (focusedTexts().any { it in programTitles || it == "Guide unavailable" }) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_DOWN, 500)
             }
-            press(KeyEvent.KEYCODE_DPAD_DOWN); press(KeyEvent.KEYCODE_DPAD_DOWN)
-            val channelName = focusedAmong(liveNames)
+            // Two rows down (accessibility focus can lag the guide's scroll, so poll after each move).
+            press(KeyEvent.KEYCODE_DPAD_DOWN); DeviceCheck.awaitFocusedAmong(liveNames); press(KeyEvent.KEYCODE_DPAD_DOWN)
+            var channelName = DeviceCheck.awaitFocusedAmong(liveNames, 2_000)
+            for (i in 0 until 3) { if (channelName != null) break; press(KeyEvent.KEYCODE_DPAD_UP); channelName = DeviceCheck.awaitFocusedAmong(liveNames, 2_000) }
             checks.check(channelName != null, "D-pad could not focus a Live TV channel row (focus: ${focused()})")
             val channel = store.visible(Kind.LIVE).firstOrNull { it.name == channelName }
             if (channelName != null) {
@@ -152,25 +154,34 @@ class FavoritesTest {
             val showTitle = show?.let { HomeRecommendations.title(it) }
             val livePage = page()
             DeviceCheck.openTopTab("Favorite movies/shows", checks) { page() != livePage && (has(By.textContains("No favorite")) || listOfNotNull(movieTitle, showTitle).any { nodeTop(it) != null }) }
-            waitFor(6_000) { listOfNotNull(movieTitle, showTitle).all { nodeTop(it) != null } }
+            waitFor(6_000) { listOfNotNull(movieTitle ?: showTitle).all { nodeTop(it) != null } }
             SystemClock.sleep(1000)
             val titlesPage = page()
             val heads = headings("Movies", "Shows", "Channels", "Favorite channels")
             note("Favorite movies/shows: page=$titlesPage headings=$heads movie=\"$movieTitle\"@${movieTitle?.let(::nodeTop)} show=\"$showTitle\"@${showTitle?.let(::nodeTop)}")
+            visibleAmong(liveNames).let { checks.check(it.isEmpty(), "Favorite movies/shows shows live channel(s) $it") }
             if (movieTitle != null) {
                 checks.check(nodeTop(movieTitle) != null, "Favorite movies/shows does not list the favorited movie \"$movieTitle\"")
                 checks.check(sectionOf(movieTitle, heads) == "Movies", "\"$movieTitle\" is not under a \"Movies\" heading (under: ${sectionOf(movieTitle, heads)})")
             }
-            if (showTitle != null) {
-                checks.check(nodeTop(showTitle) != null, "Favorite movies/shows does not list the favorited show \"$showTitle\"")
-                checks.check(sectionOf(showTitle, heads) == "Shows", "\"$showTitle\" is not under a \"Shows\" heading (under: ${sectionOf(showTitle, heads)})")
-            }
-            visibleAmong(liveNames).let { checks.check(it.isEmpty(), "Favorite movies/shows shows live channel(s) $it") }
-            val reach = DeviceCheck.dpadUntil({ focusedAmong(listOfNotNull(movieTitle, showTitle)) != null }, KeyEvent.KEYCODE_DPAD_DOWN, 4)
+            val titles = listOfNotNull(movieTitle, showTitle)
+            val reach = DeviceCheck.dpadUntil({ DeviceCheck.awaitFocusedAmong(titles, 600) != null }, KeyEvent.KEYCODE_DPAD_DOWN, 4)
             checks.check(reach != null, "D-pad DOWN from the top bar did not reach a favorite poster (focus: ${focused()})")
-            if (reach != null) route("favorites: top bar -> favorite poster", "dpad", "$reach x DOWN to ${focusedAmong(listOfNotNull(movieTitle, showTitle))}")
+            if (reach != null) route("favorites: top bar -> favorite poster", "dpad", "$reach x DOWN to ${focusedAmong(titles)}")
             SystemClock.sleep(600)
             shot("18-fav-titles")
+            if (showTitle != null) {
+                // The "Shows" section can start below the fold: move Down through the grid until the show is on screen.
+                val down = DeviceCheck.dpadUntil({ nodeTop(showTitle) != null && DeviceCheck.awaitFocusedAmong(listOf(showTitle), 600) != null }, KeyEvent.KEYCODE_DPAD_DOWN, 5)
+                if (down != null) route("favorites: scroll to the favorite show", "dpad", "$down x DOWN")
+                SystemClock.sleep(600)
+                val heads2 = headings("Movies", "Shows", "Channels", "Favorite channels")
+                note("Favorite movies/shows after scrolling: headings=$heads2 show=\"$showTitle\"@${nodeTop(showTitle)} focus=${focused()}")
+                checks.check(nodeTop(showTitle) != null, "Favorite movies/shows does not list the favorited show \"$showTitle\" (also after moving Down)")
+                checks.check(sectionOf(showTitle, heads2) == "Shows", "\"$showTitle\" is not under a \"Shows\" heading (under: ${sectionOf(showTitle, heads2)})")
+                visibleAmong(liveNames).let { checks.check(it.isEmpty(), "Favorite movies/shows shows live channel(s) $it") }
+                shot("18d-fav-titles-shows")
+            }
 
             // ---- Favorite channels ----
             DeviceCheck.openTopTab("Favorite channels", checks) { page() != titlesPage && (has(By.textContains("No favorite")) || (channelName != null && nodeTop(channelName) != null)) }

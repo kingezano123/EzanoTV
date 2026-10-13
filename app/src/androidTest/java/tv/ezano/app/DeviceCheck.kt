@@ -151,6 +151,15 @@ object DeviceCheck {
         device.findObjects(By.focused(true)).forEach { walk(it, 0) }
         out
     }.getOrDefault(emptySet())
+    /**
+     * Compose's accessibility focus can lag a LazyColumn/LazyGrid scroll: right after a D-pad move UiAutomator may see
+     * no focused node although the row is focused on screen. Polls up to [timeoutMs] until [candidates] has focus.
+     */
+    fun awaitFocusedAmong(candidates: Collection<String>, timeoutMs: Long = 1_200): String? {
+        var found: String? = null
+        waitFor(timeoutMs, 100) { found = focusedAmong(candidates); found != null }
+        return found
+    }
     /** The first of [candidates] shown by the focused node, or null. */
     fun focusedAmong(candidates: Collection<String>): String? { val t = focusedTexts(); return candidates.firstOrNull { it in t } }
     /** Which of [candidates] are drawn on screen right now (exact text). */
@@ -220,7 +229,8 @@ object DeviceCheck {
      * store when missing or outdated (route "direct": import itself is covered by EndToEndTest).
      */
     fun ensureFixture(minLive: Int = 12) {
-        waitFor(120_000, 200) { store.ready.value && !store.busy.value }
+        // The profile opens first; channels and the guide follow (catalogReady/guideReady). Judge only the full library.
+        waitFor(120_000, 200) { store.ready.value && store.catalogReady.value && store.guideReady.value && !store.busy.value }
         val s = store.state.value
         val live = s.channels.count { it.kind == Kind.LIVE }
         val present = s.providers.size == 1 && s.providers.any { it.url.contains(":8769") } && s.channels.size >= 25 && live >= minLive
