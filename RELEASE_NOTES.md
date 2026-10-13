@@ -1,28 +1,21 @@
-Ezano TV 0.5.1 fixes remote navigation on Home and in the playlist form, and makes reopening and returning from videos seamless.
+Ezano TV 0.5.2 adds automatic update prompts, separate favorites for channels and for movies & shows, and makes Back from a live channel return to where you were.
 
-**Download Ezano-TV.apk below** · Android 8+ · package `tv.ezano.app` · version code 14 · signed with the original Ezano key.
+**Download Ezano-TV.apk below** · Android 8+ · package `tv.ezano.app` · version code 15 · signed with the original Ezano key.
 
-> Installs over **0.5.0** and **0.3.x** and keeps your library. Only if you still have **0.4.0** (one-off key) installed: uninstall it once first.
+> Installs over **0.5.x** and **0.3.x** and keeps your library. This is the last update you need to install by hand: from 0.5.2 on, Ezano tells you when a new version is out.
 
-### Fixed
-- **Down from the top bar now reaches Home.** In 0.5.0 the full-screen Home sat underneath the floating bar, so the remote's Down press found nothing and stayed on "Home". Down from any tab or icon now goes to Home's main button: Play on the billboard, or Add a playlist on a new install.
-- **New install:** "Add a playlist" is already selected, so one press of OK starts setup. The playlist window and editor also open with their first button selected.
-- **Playlist form with the remote:** moving down the form no longer pops up the keyboard on every field. Press OK on a field to type, Back to close the keyboard, then Down to continue to Connect & import.
-- **Back from a video** returns to the page you were on, with its scroll position, search and filters intact, because the browsing screens stay ready underneath playback instead of being rebuilt. On Home, the title you just watched appears on the billboard with **Resume** selected.
-- **After importing a playlist** you land on Home with its new content selected, instead of an empty Live TV page for movie-only playlists.
-- The top bar turns solid as soon as Home scrolls, and selecting the billboard scrolls back to the top, so nothing overlaps the logo.
-- "Subtitles off" now also turns live captions off until you turn them back on.
-- Live channels that keep dropping no longer reconnect forever; after a few tries you get the error panel.
-- Focused buttons are unmistakable: solid white with a red outline.
-- Movies, Shows and Home rows are remembered per library, so switching tabs is instant even with 150,000+ titles.
-- Safer saving: a backup restored right after launch is no longer undone, and failed saves back off instead of retrying forever.
+### Automatic update prompts
+- A few seconds after Home opens, Ezano quietly checks for a newer version, without slowing startup. When one is available it shows **Update available** with what's new, plus **Update now**, **Later** (asks again in a day) and **Skip this version**.
+- **Update now** downloads the update inside the app with a progress bar, verifies it, and opens Android's installer. Press **Install** and your library is kept.
+- The first time, Android asks you to allow Ezano to install updates; the app takes you straight to that switch. On Fire TV this is under Settings → My Fire TV → Developer options → Install unknown apps → Ezano TV.
+- **Settings → App updates → Check now** checks on demand.
 
-### Verified on an Android TV emulator (Android 11, 1080p) with the remote only
-All 12 device checks pass: fresh install → Add a playlist → typing the playlist with the remote → import → Home → rows → Movies → Shows → Live TV → details → playback → Audio & subtitles → caption background → Back, plus playback, recording, player controls and details checks.
+### Favorites
+- **Favorite channels** (formerly "My stuff") shows your favorite live channels and your channel groups. To add one, long-press a channel in Live TV.
+- New **Favorite movies/shows** tab: open any movie or show and choose **Add to favorites**. Movies and shows appear in their own sections.
 
-Measured on the emulator:
-- Cold start to Home: about 1.7 s (2.8 s with a 76,000-title, 64,000-programme library).
-- Reopen from the background: about 0.8 s.
-- First remote response: under 0.2 s.
+### Live TV
+- Back from a channel returns to the same place in the guide: same group or search, scrolled to that channel, and with it selected. If you changed channels with the number keys, you land on the last one you watched.
 
-Physical Fire TV timing may differ.
+### Polish
+- A clearer highlight on the top bar, which now fits six tabs.

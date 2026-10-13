@@ -1,1 +1,1 @@
-<paths xmlns:android="http://schemas.android.com/apk/res/android"><external-files-path name="recordings" path="Movies/" /><files-path name="private_recordings" path="recordings/" /></paths>
+<paths xmlns:android="http://schemas.android.com/apk/res/android"><external-files-path name="recordings" path="Movies/" /><files-path name="private_recordings" path="recordings/" /><cache-path name="updates" path="updates/" /></paths>

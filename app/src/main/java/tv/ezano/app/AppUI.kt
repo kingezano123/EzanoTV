@@ -63,6 +63,7 @@ import java.time.format.DateTimeFormatter
         details?.let { c-> DetailDialog(a,c,onDismiss={details=null},onProgram={p->details=null; program=c to p}) }
         program?.let { (c,p)->ProgramDialog(a,c,p) {program=null} }
         a.pinRequest?.let { action->PinDialog(a,onDismiss={a.pinRequest=null}) { a.pinRequest=null; action() } }
+        UpdatePrompt(a)
         if(exit) Modal("Leave Ezano TV?",{exit=false}) { val keep=remember {FocusRequester()};LaunchedEffect(Unit) {delay(200);runCatching {keep.requestFocus()}}; Text("Your playlists and watch progress are saved.",color=Muted); Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) { EzButton("Keep watching",primary=true,modifier=Modifier.focusRequester(keep),onClick={exit=false}); EzButton("Exit",onClick={a.finish()}) } }
     } }
 }
