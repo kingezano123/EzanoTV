@@ -11,9 +11,6 @@
   html, body { margin: 0; background: #000; overflow: hidden; width: 1280px; height: 720px; }
   canvas { display: block; }
   .ov { position: fixed; pointer-events: none; font-family: Ethi, Inter, sans-serif; color: #fff; opacity: 0; }
-  #cap { left: 50%; bottom: 40px; transform: translateX(-50%); width: max-content; max-width: 1060px; text-align: center;
-         font-weight: 700; font-size: 31px; line-height: 1.5; padding: 12px 28px; border-radius: 18px;
-         background: rgba(18, 14, 32, .58); text-shadow: 0 2px 6px rgba(0,0,0,.45); box-shadow: 0 8px 30px rgba(0,0,0,.18); }
   #chip { left: 34px; top: 30px; font-weight: 700; font-size: 20px; padding: 8px 18px; border-radius: 999px;
           background: rgba(255,255,255,.82); color: #3b2d63; letter-spacing: .5px; }
   #tip { left: 50%; top: 34px; transform: translateX(-50%); width: max-content; max-width: 1100px; display: flex; align-items: center; gap: 16px;
@@ -23,9 +20,17 @@
   #title { inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
   #title .t1 { font-family: EthiSerif, Ethi; font-weight: 700; font-size: 86px; text-shadow: 0 6px 0 #6b3fa0, 0 12px 40px rgba(60,20,90,.45); }
   #title .t2 { margin-top: 18px; font-weight: 700; font-size: 36px; padding: 10px 26px; border-radius: 16px; background: rgba(40,20,70,.5); }
-  #big { inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; }
-  #big span { font-family: EthiSerif, Ethi; font-weight: 700; font-size: 60px; padding: 18px 40px; border-radius: 24px; background: rgba(25,18,40,.55); text-shadow: 0 4px 14px rgba(0,0,0,.4); }
   #fade { position: fixed; inset: 0; background: #000; opacity: 1; pointer-events: none; }
+  #fly { position: fixed; inset: 0; pointer-events: none; perspective: 900px; }
+  .fx { position: absolute; white-space: pre; font-family: Ethi, Inter, sans-serif; font-weight: 900; transform-style: preserve-3d; will-change: transform; line-height: 1.25; }
+  .fx span { display: inline-block; white-space: pre; transform-style: preserve-3d; }
+  .fx.hero  { color: #fff; text-shadow: 0 4px 0 #5b2fb0, 0 7px 0 rgba(60,25,120,.55), 0 12px 30px rgba(40,10,80,.45); }
+  .fx.q     { color: #7b4fd1; text-shadow: 0 3px 0 #fff, 0 -2px 0 #fff, 2px 0 0 #fff, -2px 0 0 #fff, 0 10px 26px rgba(60,20,90,.35); }
+  .fx.pill  { padding: .1em .55em .14em; border-radius: .55em; color: #fff; }
+  .fx.accent { background: linear-gradient(90deg, #ff8a3d, #f2b53a); box-shadow: 0 10px 30px rgba(120,60,0,.32); text-shadow: 0 2px 3px rgba(120,50,0,.35); }
+  .fx.warn  { background: linear-gradient(90deg, #e8435f, #ff7a90); box-shadow: 0 10px 30px rgba(120,0,30,.3); text-shadow: 0 2px 3px rgba(110,0,30,.35); }
+  .fx.calm  { background: linear-gradient(90deg, #2fa772, #22b8cf); box-shadow: 0 10px 30px rgba(0,80,70,.3); text-shadow: 0 2px 3px rgba(0,60,60,.35); }
+  .fx.soft  { background: rgba(255,255,255,.93); color: #3b2d63; box-shadow: 0 10px 28px rgba(40,20,80,.2); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -38,8 +43,7 @@
 <div id="chip" class="ov"></div>
 <div id="tip" class="ov"><span class="num"></span><span class="txt"></span></div>
 <div id="title" class="ov"><div class="t1">ሄዶኒክ አዳፕቴሽን</div><div class="t2">ለምን ምንም ነገር ለዘላለም አያስደስተንም?</div></div>
-<div id="big" class="ov"><span></span></div>
-<div id="cap" class="ov"></div>
+<div id="fly"></div>
 <div id="fade"></div>
 <script type="module">
 import * as THREE from 'three';
@@ -688,60 +692,72 @@ function shotCam(lt, a, b, e = ease, shake = 1) {
 }
 
 // =====================================================================  text track (Amharic)
-const CAPS = [
-  // scene 1
-  [6.0, 9.0, 'ለዓመታት ሠርተህ የህልምህን መኪና ለመግዛት እንደምትጥር አስብ።'],
-  [9.0, 12.0, 'ገንዘብ ታጠራቅማለህ፤ ሌሎች ብዙ ነገሮችን ትሠዋለህ።'],
-  [12.0, 18.0, 'በመጨረሻም አንድ ቀን ያንን የሚያምር አዲስ መኪና እየነዳህ ወደ ቤትህ ትመለሳለህ።'],
-  [18.0, 21.0, 'በመጀመሪያዎቹ ሳምንታት እያንዳንዱ ጉዞ ልዩ ስሜት ይሰጥሃል።'],
-  [21.0, 24.5, 'በመኪና ማቆሚያው ላይ ታደንቀዋለህ፤ ለጓደኞችህ ማሳየት ያስደስትሃል።'],
-  [24.5, 27.0, 'ውስጡ መቀመጥ ብቻ እንኳ ደስ ያሰኝሃል።'],
-  [27.0, 30.0, 'ነገር ግን ከስድስት ወር በኋላ አንድ ነገር ይለወጣል።'],
-  [30.0, 33.0, 'መኪናው አሁንም ያምራል፤ አሁንም በትክክል ይሠራል።'],
-  [33.0, 36.0, 'አሁን ግን ዝም ብሎ «መኪናህ» ብቻ ሆኗል።'],
-  [36.0, 39.0, 'የመጀመሪያውን ቀን ጉጉትና ደስታ ከእንግዲህ አይሰማህም።'],
-  [39.0, 41.5, 'እናም በድንገት ስለሚቀጥለው መኪና ማሰብ ትጀምራለህ።'],
-  [41.5, 43.0, 'ይህ ለምን ይሆናል?'],
-  [43.0, 45.0, 'የተመኘናቸው ነገሮች ውሎ አድሮ ለምን ተራ ይሆናሉ?'],
-  // scene 2
-  [45.5, 48.0, 'አስገራሚው ነገር እዚህ ላይ ነው።'],
-  [48.0, 52.0, 'ችግሩ የግድ መኪናው፣ ቤቱ፣ ደመወዙ ወይም ስኬቱ አይደለም።'],
-  [52.0, 58.0, 'ችግሩ አእምሯችን ከአዎንታዊ ለውጦች ጋር የሚላመድበት መንገድ ነው።'],
-  [58.0, 61.0, 'የሥነ ልቦና ባለሙያዎች ይህንን «ሄዶኒክ አዳፕቴሽን» ይሉታል።'],
-  [61.0, 66.0, 'ሰዎች ከሁኔታዎቻቸው ለውጥ ጋር በስሜት ስለሚላመዱ፣ ከአስደሳች ተሞክሮዎች የሚገኘው ደስታ ከጊዜ በኋላ ይደበዝዛል።'],
-  [66.0, 68.0, 'እስቲ አስበው።'],
-  [68.0, 71.0, 'የሥራ እድገት ታገኛለህ፤ ትደሰታለህ።'],
-  [71.0, 75.0, 'የደመወዝ ጭማሪ ታገኛለህ፤ ሕይወት የተሻለ ይመስላል።'],
-  [75.0, 79.0, 'ወደ ትልቅ ቤት ትዛወራለህ፤ ሁሉም ነገር ድንቅ ይመስላል።'],
-  [79.0, 82.0, 'ቀስ በቀስ ግን እነዚህ መሻሻሎች አዲሱ የተለመደ ኑሮህ ይሆናሉ።'],
-  [82.0, 84.0, 'የምትጠብቀው ነገር ይቀየራል።'],
-  [84.0, 87.5, 'በአንድ ወቅት ቅንጦት የነበረው፣ ዝም ብለህ የምትጠብቀው ነገር ይሆናል።'],
-  [87.5, 90.0, 'ከዚያም ቀጣዩን መሻሻል ማሳደድ ትጀምራለህ።'],
-  // scene 3
-  [90.5, 92.5, 'ግን ያልተጠበቀው ነገር ይኸውልህ።'],
-  [92.5, 96.0, 'ችግሩ በቂ ነገር ስለሌለህ ባይሆንስ?'],
-  [96.0, 100.0, 'ችግሩ አእምሮህ የመጨረሻውን መስመር እያራቀው መሄዱ ቢሆንስ?'],
-  [100.0, 104.0, 'አሥር ሺህ ዶላር ተጨማሪ ማግኘት ሕይወቱን በመጨረሻ የሚያረካ ያደርጋል ብሎ የሚያምን ሰው አስብ።'],
-  [104.0, 106.0, 'ያንን ገቢ ያገኛል።'],
-  [106.0, 108.5, 'ለተወሰነ ጊዜ ሁሉም ነገር አስደሳች ይሆናል።'],
-  [108.5, 115.0, 'ከዚያም አኗኗሩን ያስተካክላል፣ የሚጠብቀውን ከፍ ያደርጋል፣ የበለጠም መፈለግ ይጀምራል።'],
-  [115.0, 119.0, '«ሄዶኒክ ትሬድሚል» (የደስታ መሮጫ) ጠንካራ ጽንሰ ሐሳብ የሆነው ለዚህ ነው።'],
-  [119.0, 124.0, 'ወደ ፊት መሮጥህን ትቀጥላለህ፤ የእርካታ ስሜቱ ግን የግድ አብሮህ አይጓዝም።'],
-  [124.0, 126.0, 'ይህ ማለት ትልቅ ምኞት መጥፎ ነው ማለት አይደለም።'],
-  [126.0, 128.0, 'የተሻለ ሕይወት መፈለግ ተፈጥሯዊ ነው።'],
-  [128.0, 131.5, 'አደጋው ቀጣዩ ስኬት እርካታ ማጣትህን ለዘለቄታው ይፈታል ብሎ ማመን ነው።'],
-  [131.5, 135.0, 'እየደበዘዘ የሚሄድን ስሜት በማሳደድ ዕድሜህን በሙሉ ልታሳልፍ ትችላለህ።'],
-  // scene 4
-  [135.5, 137.5, 'ታዲያ ከዚህ ማለቂያ ከሌለው መሮጫ እንዴት እንውጣ?'],
-  [137.5, 139.0, 'አምስት ነገሮችን ተለማመድ።'],
-  [139.0, 145.0, 'በአንድ ወቅት ያለምከው ቤት፣ ሥራና እድሎች አሁን የዕለት ተዕለት ሕይወትህ አካል ሆነው ሊሆን ይችላል።'],
-  [145.0, 151.0, 'ስለሌለህ ነገር ከማሰብህ በፊት ያለህን አስታውስ።'],
-  [151.0, 157.0, 'ግንኙነቶች፣ ትርጉም ያላቸው ውይይቶችና የጋራ ትዝታዎች ዘላቂ ዋጋ አላቸው።'],
-  [157.0, 163.0, 'የሌላ ሰው ስኬት ምን ያህል ርቀት እንደተጓዝክ ሊያስረሳህ ይችላል።'],
-  [163.0, 169.0, 'እድገት አስፈላጊ ነው፤ ደስታ ግን ሙሉ በሙሉ ተጨማሪ በማግኘት ላይ መመሥረት የለበትም።'],
-  [169.0, 171.0, 'ልታስብበት የሚገባ ነገር፦'],
-  [171.0, 175.5, 'አጥብቀህ ለማግኘት የምትጥረው ሕይወት፣ ውሎ አድሮ ቸል የምትለው ያው ሕይወት ቢሆንስ?'],
-  [175.5, 179.4, 'ቀጣዩን ነገር በማሳደድ ዕድሜህን አታሳልፍ፤ ያለህን ማድነቅ አትርሳ።'],
+// flying key points: [start, end, text, style, x%, y%, size px, from]
+const KEYS = [
+  // scene 1 · the dream car
+  [6.4, 9.0, 'የዓመታት ቁጠባ', 'hero', 30, 22, 64, 'L'],
+  [9.2, 12.0, 'መስዋዕትነት', 'accent', 68, 22, 50, 'R'],
+  [12.6, 15.5, 'የህልም መኪና!', 'hero', 50, 22, 80, 'Z'],
+  [15.8, 18.0, 'ወደ ቤት…', 'soft', 26, 24, 44, 'L'],
+  [18.3, 21.0, 'እያንዳንዱ ጉዞ ልዩ ነው', 'hero', 50, 18, 56, 'D'],
+  [21.3, 24.4, 'ኩራትና ደስታ', 'accent', 66, 18, 50, 'R'],
+  [24.7, 27.0, 'ውስጡ መቀመጥ ብቻ…', 'soft', 50, 16, 44, 'U'],
+  [27.4, 29.9, 'ከ6 ወር በኋላ…', 'hero', 50, 50, 86, 'Z'],
+  [30.4, 33.0, 'አሁንም ያምራል', 'soft', 28, 20, 46, 'L'],
+  [33.2, 36.0, 'ግን… ተራ ሆኗል', 'hero', 62, 22, 64, 'R'],
+  [36.3, 39.0, 'ጉጉቱ ጠፋ', 'warn', 66, 34, 50, 'D'],
+  [39.4, 41.4, 'ቀጣዩ መኪና?', 'q', 72, 20, 60, 'R'],
+  [41.6, 43.0, 'ለምን?', 'q', 50, 46, 130, 'Z'],
+  [43.2, 45.0, 'ህልም → ተራ', 'hero', 50, 22, 68, 'Z'],
+  // scene 2 · the mind's mystery
+  [45.7, 48.2, 'አስገራሚው ክፍል', 'accent', 50, 18, 52, 'D'],
+  [48.5, 52.0, 'ችግሩ እቃው አይደለም', 'hero', 50, 22, 62, 'Z'],
+  [52.4, 55.4, 'አእምሮ ይላመዳል', 'hero', 24, 40, 54, 'L'],
+  [55.6, 58.0, 'አዲሱ ነገር ይለመዳል', 'soft', 76, 64, 40, 'R'],
+  [61.0, 66.0, 'ደስታው ይደበዝዛል', 'warn', 80, 22, 40, 'R'],
+  [68.2, 70.6, 'ደስታ ↑', 'calm', 85, 38, 44, 'U'],
+  [72.0, 74.4, 'ደስታ ↑', 'calm', 85, 38, 44, 'U'],
+  [76.0, 78.4, 'ደስታ ↑', 'calm', 85, 38, 44, 'U'],
+  [79.3, 82.0, 'አዲሱ የተለመደ', 'accent', 52, 47, 58, 'Z'],
+  [82.2, 84.0, 'የምትጠብቀው ይቀየራል', 'accent', 50, 16, 48, 'D'],
+  [84.4, 87.4, 'ቅንጦት → የተለመደ', 'hero', 60, 18, 60, 'R'],
+  [87.7, 90.0, 'ቀጣዩን ማሳደድ…', 'q', 40, 22, 56, 'L'],
+  // scene 3 · the unexpected truth
+  [90.7, 92.6, 'ያልተጠበቀው እውነት', 'accent', 50, 18, 52, 'Z'],
+  [92.8, 96.0, 'ችግሩ ማጣት ነው?', 'q', 34, 24, 58, 'L'],
+  [96.2, 100.0, 'የመጨረሻው መስመር ይርቃል', 'hero', 58, 20, 54, 'R'],
+  [100.6, 103.8, '+$10,000 = እርካታ?', 'q', 30, 22, 50, 'L'],
+  [104.2, 106.0, 'ተሳካ!', 'calm', 72, 18, 62, 'Z'],
+  [106.3, 108.4, 'ለጊዜው…', 'soft', 30, 22, 44, 'L'],
+  [109.0, 115.0, 'አኗኗር ↑', 'soft', 15, 16, 40, 'L'],
+  [110.6, 115.0, 'ፍላጎት ↑↑', 'warn', 15, 29, 46, 'L'],
+  [112.4, 115.0, 'ተጨማሪ…', 'q', 15, 43, 52, 'L'],
+  [115.3, 119.0, 'ሄዶኒክ ትሬድሚል', 'hero', 50, 18, 72, 'Z'],
+  [119.3, 124.0, 'ትሮጣለህ… እርካታ ግን አይከተልም', 'warn', 50, 15, 38, 'D'],
+  [124.2, 126.0, 'ምኞት መጥፎ አይደለም', 'calm', 30, 20, 46, 'L'],
+  [126.2, 128.0, 'የተሻለ መፈለግ ተፈጥሯዊ ነው', 'soft', 64, 30, 40, 'R'],
+  [128.2, 131.4, 'አደጋው፦ «ቀጣዩ ያረካኛል» ብሎ ማመን', 'warn', 50, 15, 38, 'D'],
+  [131.7, 135.0, 'የሚደበዝዝ ስሜትን ማሳደድ', 'hero', 50, 22, 52, 'U'],
+  // scene 4 · five lessons
+  [135.6, 137.4, 'ከመሮጫው እንዴት እንውጣ?', 'q', 50, 17, 54, 'D'],
+  [137.5, 139.0, '፭ ልምዶች', 'accent', 50, 17, 50, 'Z'],
+  [140.0, 144.6, 'ያለህን አድንቅ', 'hero', 26, 40, 58, 'L'],
+  [141.8, 144.6, 'ቤት · ሥራ · እድል', 'soft', 26, 55, 38, 'L'],
+  [145.8, 150.6, 'ምስጋና', 'hero', 24, 38, 72, 'L'],
+  [147.6, 150.6, 'ያለህን አስታውስ', 'soft', 25, 54, 40, 'L'],
+  [151.8, 156.6, 'ግንኙነት', 'calm', 22, 32, 46, 'L'],
+  [152.8, 156.6, 'ውይይት', 'accent', 78, 30, 46, 'R'],
+  [153.8, 156.6, 'ትዝታ', 'soft', 78, 48, 46, 'R'],
+  [157.6, 160.2, 'ማወዳደር አቁም', 'warn', 70, 34, 50, 'R'],
+  [160.5, 162.8, 'የራስህን ጉዞ እይ', 'calm', 26, 34, 48, 'L'],
+  [164.0, 168.6, 'ትርጉም ያለው ግብ', 'calm', 72, 40, 52, 'R'],
+  [166.2, 168.6, 'ፍጆታ ብቻ አይደለም', 'soft', 72, 55, 38, 'R'],
+  // closing thought
+  [169.3, 171.0, 'አስብበት…', 'soft', 50, 20, 46, 'D'],
+  [171.2, 175.4, 'የምትመኘው ሕይወት…', 'hero', 50, 17, 56, 'L'],
+  [172.9, 175.4, '…ነገ ተራ ሊሆን ይችላል', 'q', 50, 30, 50, 'R'],
+  [175.8, 179.6, 'ያለህን አድንቅ', 'hero', 50, 40, 100, 'Z'],
+  [176.8, 179.6, 'ቀጣዩን ብቻ አታሳድድ', 'soft', 50, 57, 40, 'U'],
 ];
 const TIPS = [
   [139, 145, '፩', 'ተራ የሆኑትን ነገሮች አድንቅ'],
@@ -751,8 +767,39 @@ const TIPS = [
   [163, 169, '፭', 'ፍጆታን ሳይሆን ትርጉም ያላቸውን ግቦች ተከተል'],
 ];
 const CHIPS = [[6, 45, 'ክፍል ፩ · የህልም መኪና'], [45.5, 90, 'ክፍል ፪ · የአእምሮ ምስጢር'], [90.5, 135, 'ክፍል ፫ · ያልተጠበቀው እውነት'], [135.5, 169, 'ክፍል ፬ · አምስት ትምህርቶች']];
-const BIGS = [[27.4, 29.8, 'ከ6 ወር በኋላ…']];
 const el = id => document.getElementById(id);
+const FLY = KEYS.map(([a, b, text, style, x, y, size, from]) => {
+  const d = document.createElement('div');
+  d.className = 'fx ' + style + (['accent', 'warn', 'calm', 'soft'].includes(style) ? ' pill' : '');
+  d.style.left = x + '%'; d.style.top = y + '%'; d.style.fontSize = size + 'px'; d.style.display = 'none';
+  const chars = [...text].map(ch => { const sp = document.createElement('span'); sp.textContent = ch; d.appendChild(sp); return sp; });
+  el('fly').appendChild(d);
+  return { a, b, from, d, chars, pill: d.classList.contains('pill') };
+});
+const DIRS = { L: [-260, 0, 0, 70], R: [260, 0, 0, -70], U: [0, -160, 80, 0], D: [0, 160, -80, 0], Z: [0, 0, 0, 0] };
+function flyText(t) {
+  for (const f of FLY) {
+    if (t < f.a - .05 || t > f.b + .05) { f.d.style.display = 'none'; continue; }
+    f.d.style.display = 'block';
+    const [dx, dy, rx, ry] = DIRS[f.from], out = sm(seg(t, f.b - .45, f.b)), bob = Math.sin((t - f.a) * 2.2) * 4;
+    const stag = Math.min(.045, .55 / f.chars.length);
+    if (f.pill) {   // the whole pill flies in with a 3D swing
+      const k = spring(seg(t, f.a, f.a + .6));
+      f.d.style.transform = `translate(-50%,-50%) translate3d(${dx * (1 - k)}px, ${dy * (1 - k) + bob - out * 50}px, ${-300 * (1 - k)}px) rotateX(${rx * (1 - k)}deg) rotateY(${ry * (1 - k)}deg) scale(${(f.from === 'Z' ? lerp(.2, 1, k) : 1) * (1 + out * .12)})`;
+      f.d.style.opacity = clamp(k * 2) * (1 - out);
+      f.chars.forEach((c, i) => { const ck = sm(seg(t, f.a + .15 + i * stag, f.a + .45 + i * stag)); c.style.opacity = ck; c.style.transform = `translateY(${(1 - ck) * 14}px)`; });
+    } else {        // letters fly in one by one
+      f.d.style.transform = `translate(-50%,-50%) translateY(${bob - out * 60}px) scale(${1 + out * .15})`;
+      f.d.style.opacity = 1 - out;
+      f.chars.forEach((c, i) => {
+        const k = spring(seg(t, f.a + i * stag, f.a + i * stag + .6));
+        const zx = f.from === 'Z' ? 0 : dx, zy = f.from === 'Z' ? 0 : dy;
+        c.style.opacity = clamp(k * 2.5);
+        c.style.transform = `translate3d(${zx * (1 - k)}px, ${zy * (1 - k)}px, ${(f.from === 'Z' ? 600 : -400) * (1 - k)}px) rotateX(${rx * (1 - k)}deg) rotateY(${ry * (1 - k)}deg) rotateZ(${(i % 2 ? 12 : -12) * (1 - k)}deg)`;
+      });
+    }
+  }
+}
 const fadeK = (t, a, b, f = .35) => Math.min(sm((t - a) / f), sm((b - t) / f));
 function setOverlay(id, list, t, render) {
   const node = el(id); const it = list.find(([a, b]) => t >= a && t < b);
@@ -856,7 +903,7 @@ const SHOTS = [
         o.holder.position.y = 1.0 + .08 * Math.sin(t * 2 + i) - .1 * dim;
         o.lb.material.opacity = 1 - .5 * dim;
       });
-      act(hero, { pos: [-4.9, 1.6], yaw: .8, pose: poseIdle(t), arms: lt > .55 ? 'shrug' : 'rest', face: { smile: .3 }, look: [.6, 0], t });
+      act(hero, { pos: [-4.3, 1.9], yaw: .8, pose: poseIdle(t), arms: lt > .55 ? 'shrug' : 'rest', face: { smile: .3 }, look: [.6, 0], t });
       shotCam(lt, [[-1.5, 2.8, 9.5], [-.8, 1.3, 0]], [[0, 2.4, 8.4], [-.3, 1.3, 0]]);
     } },
   // ---------------- scene 2: the mind adapts
@@ -919,7 +966,7 @@ const SHOTS = [
       const [bi, be] = M.bars;
       bi.b.scale.y = .3 + 2.2 * inc; bi.b.position.y = bi.b.scale.y / 2; bi.lb.position.y = .25;
       be.b.scale.y = .3 + 2.0 * exp; be.b.position.y = be.b.scale.y / 2; be.lb.position.y = .25;
-      bi.g.position.set(-3.6, 0, .6); be.g.position.set(-2.1, 0, .6);
+      bi.g.position.set(-4.0, 0, .6); be.g.position.set(-1.8, 0, .6);
       act(hero, { pos: [2.6, 1.2], yaw: -.6, pose: poseIdle(t), arms: got && t < 107.5 ? 'cheer' : t > 110 ? 'shrug' : 'rest', face: { smile: got && t < 108.5 ? 1 : t > 110 ? .1 : .6, open: got && t < 107.5 ? .6 : 0 }, look: [-.6, .5], t });
       shotCam(lt, [[0, 2.8, 10.5], [-.4, 2.0, 0]], [[.8, 2.6, 9.4], [-.6, 2.0, 0]]);
     } },
@@ -1077,9 +1124,8 @@ window.renderAt = (t) => {
   // overlays
   el('title').style.opacity = Math.min(sm(seg(t, .6, 1.6)), 1 - sm(seg(t, 5.0, 5.9)));
   el('title').style.transform = `scale(${1 + .04 * sm(seg(t, .6, 5.9))})`;
-  setOverlay('cap', CAPS, t, (n, it) => { n.textContent = it[2]; });
   setOverlay('chip', CHIPS, t, (n, it) => { n.textContent = it[2]; });
-  setOverlay('big', BIGS, t, (n, it) => { n.firstChild.textContent = it[2]; });
+  flyText(t);
   setOverlay('tip', TIPS, t, (n, it) => { n.querySelector('.num').textContent = it[2]; n.querySelector('.txt').textContent = it[3]; });
   // scene transitions: dip to black at scene boundaries, fade in/out
   let fade = 1 - sm(seg(t, 0, 1.0));

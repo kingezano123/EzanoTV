@@ -36,7 +36,7 @@ cd build && AUDIO=../music.wav PAGE=dance.html NODE_PATH=$(npm root -g) node ../
 
 # Hedonic Adaptation, an Amharic 3D explainer (`hedonic-adaptation-am.mp4`)
 
-A 3-minute, 24 fps animation. All on-screen text is in Amharic, there is no voice, and an original background score plays throughout.
+A 3-minute, 24 fps animation. All on-screen text is in Amharic, there is no voice, and an original background score plays throughout. There are no subtitles: short Amharic key points fly into the frame to highlight each idea. They come in letter by letter or as a swinging pill, hover, then lift away.
 
 | Time | Scene | What you see |
 |---|---|---|
@@ -45,7 +45,7 @@ A 3-minute, 24 fps animation. All on-screen text is in Amharic, there is no voic
 | 1:30–2:15 | ክፍል ፫ · ያልተጠበቀው እውነት | A finish line (የመጨረሻ መስመር) that keeps moving away, the +$10,000 coin, income vs expectations bars, a treadmill with the እርካታ heart just out of reach, and stepping off |
 | 2:15–3:00 | ክፍል ፬ · አምስት ትምህርቶች | Lesson tiles ፩–፭, appreciating what you have, a gratitude journal, a coffee ceremony (ቡና) with friends, two staircases (yours vs others'), planting a tree, and a sunset on the porch |
 
-- `hedonic.html` holds the scenes, props, Amharic captions (`CAPS`), lesson titles (`TIPS`) and camera work.
+- `hedonic.html` holds the scenes, props, flying Amharic key points (`KEYS`: time, text, style, position, direction), lesson titles (`TIPS`) and camera work.
 - `hedonic_music.py` makes the 3-minute score in the tizita mode: major for the warm scenes, minor for the treadmill tension. It has piano, a krar-like melody, a pad and a soft kebero.
 - `fonts/` holds Noto Sans and Noto Serif Ethiopic (SIL Open Font License).
 - The characters come from `avatar.js`: lighter skin tones, and hands with five fingers that can curl.
