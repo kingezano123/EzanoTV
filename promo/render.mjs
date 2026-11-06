@@ -4,7 +4,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
@@ -13,7 +13,7 @@ const root = path.resolve(process.argv[2] || '.');
 const out = path.resolve(process.argv[3] || 'ezano-tv-3d.mp4');
 const fps = Number(process.argv[4] || 30);
 const only = process.argv[5] ? process.argv[5].split(',').map(Number) : null;
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.otf': 'font/otf' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.otf': 'font/otf', '.woff2': 'font/woff2' };
 
 const server = http.createServer((req, res) => {
   const p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
@@ -23,6 +23,21 @@ const server = http.createServer((req, res) => {
 }).listen(0);
 const port = server.address().port;
 
+// parallel rendering: WORKERS=n spawns n renderers (each its own browser), then encodes once
+const framesDirMain = path.join(path.dirname(out), 'frames');
+if (process.env.WORKERS && !process.env.SHARD && !only) {
+  const n = Number(process.env.WORKERS);
+  fs.rmSync(framesDirMain, { recursive: true, force: true }); fs.mkdirSync(framesDirMain, { recursive: true });
+  await Promise.all([...Array(n).keys()].map(k => new Promise((res, rej) => {
+    const c = spawn(process.execPath, [process.argv[1], ...process.argv.slice(2)], { env: { ...process.env, SHARD: `${k}/${n}` }, stdio: 'inherit' });
+    c.on('exit', code => code === 0 ? res() : rej(new Error('worker ' + k + ' failed')));
+  })));
+  server.close();
+  const audio = process.env.AUDIO ? ['-i', path.resolve(process.env.AUDIO), '-c:a', 'aac', '-b:a', '192k', '-shortest'] : [];
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(framesDirMain, 'f%04d.png'), ...audio,
+    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', out], { stdio: 'inherit' });
+  console.log('wrote', out); process.exit(0);
+}
 const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('console', m => console.log('[page]', m.text()));
@@ -32,9 +47,10 @@ await page.waitForFunction('window.READY === true', null, { timeout: 60000 });
 const duration = await page.evaluate('window.DURATION');
 
 const framesDir = path.join(path.dirname(out), 'frames');
-fs.rmSync(framesDir, { recursive: true, force: true }); fs.mkdirSync(framesDir, { recursive: true });
+if (!process.env.SHARD) { fs.rmSync(framesDir, { recursive: true, force: true }); fs.mkdirSync(framesDir, { recursive: true }); }
 const total = Math.round(duration * fps);
-const list = only || [...Array(total).keys()];
+let list = only || [...Array(total).keys()];
+if (process.env.SHARD) { const [k, n] = process.env.SHARD.split('/').map(Number); list = list.filter(i => i % n === k); }
 for (const i of list) {
   await page.evaluate(t => window.renderAt(t), i / fps);
   await page.screenshot({ path: path.join(framesDir, `f${String(i).padStart(4, '0')}.png`) });
@@ -42,7 +58,7 @@ for (const i of list) {
 }
 await browser.close(); server.close();
 
-if (!only) {
+if (!only && !process.env.SHARD) {
   const audio = process.env.AUDIO ? ['-i', path.resolve(process.env.AUDIO), '-c:a', 'aac', '-b:a', '192k', '-shortest'] : [];
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(framesDir, 'f%04d.png'), ...audio,
     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', out], { stdio: 'inherit' });

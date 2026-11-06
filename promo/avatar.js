@@ -30,6 +30,8 @@ export const OUTFITS = {
     sash: '#16824a',
   },
   orange_jacket_jeans: { top: '#e07a2e', bottom: '#3b5a86', shoe: '#5b4636', collar: '#2f2f33' },
+  blue_shirt_jeans:   { top: '#3f7cc4', bottom: '#2d3f5e', shoe: '#ececec' },
+  green_dress:        { top: '#3f9e6e', bottom: 'skin', shoe: '#8a5a3a', dress: { top: 1.04, hem: .42, profile: [[1.04, .118], [.92, .185], [.7, .215], [.42, .25]], bands: [] } },
   chef_whites:        { top: '#f4f4f2', bottom: '#5d7fa6', shoe: '#2d2d2d', strip: .03, tilet: ['#2d2d2d', '#f4f4f2', '#f4f4f2'] },
   red_overalls:       { top: '#f2f2f2', bottom: '#d9574f', shoe: '#3a3a3a', bib: '#d9574f' },
   teal_tee_red_shorts:{ top: '#38b2a6', bottom: '#d64545', shoe: '#2b6fb3', shorts: .62 },
@@ -37,8 +39,8 @@ export const OUTFITS = {
 
 // ------------------------------------------------------------- body types --
 export const BODIES = {
-  man:   { s: 1.0,  sh: .185, hip: .098, chest: .158, waist: .132, pelvis: .152, arm: [.052, .044, .037, .031], leg: [.084, .061, .052, .038], bust: 0 },
-  woman: { s: .935, sh: .165, hip: .1,   chest: .142, waist: .112, pelvis: .162, arm: [.044, .037, .032, .027], leg: [.084, .058, .048, .034], bust: 1 },
+  man:   { s: 1.0,  sh: .185, hip: .098, chest: .158, waist: .132, pelvis: .152, arm: [.052, .044, .037, .031], leg: [.084, .061, .052, .038], bust: 0, hand: 1 },
+  woman: { s: .935, sh: .165, hip: .1,   chest: .142, waist: .112, pelvis: .162, arm: [.044, .037, .032, .027], leg: [.084, .058, .048, .034], bust: 1, hand: .9 },
 };
 
 // ------------------------------------------------------------- SDF helpers --
@@ -77,6 +79,23 @@ function layout(B) {
     J['fArm' + n] = sh.map((v, i) => v + d[i] * lens[0]);
     J['hand' + n] = J['fArm' + n].map((v, i) => v + d[i] * lens[1]);
     J['tip' + n] = J['hand' + n].map((v, i) => v + d[i] * lens[2]);
+    // hand frame: u along the hand, w across the knuckles (thumb side = +z), nrm = palm normal
+    const hs = s * (B.hand || 1), u = d, w = [0, 0, 1], cr = [u[1], -u[0], 0], nrm = cr.map(v => v * side);
+    const at = (base, ...terms) => base.map((v, i) => v + terms.reduce((a, [vec, k]) => a + vec[i] * k * hs, 0));
+    const norm = v => { const l = Math.hypot(...v); return v.map(x => x / l); };
+    const wr = J['hand' + n];
+    J['knuck' + n] = at(wr, [u, .09]);
+    const fingers = [ // [across, spread, len1, len2, radius]
+      [.031, .17, .046, .036, .0079], [.0105, .06, .051, .039, .0083], [-.0105, -.06, .048, .036, .0079], [-.031, -.18, .038, .029, .007]];
+    fingers.forEach(([wo, sp, l1, l2, r], i) => {
+      const K = at(wr, [u, .088], [w, wo]), dir = norm(u.map((v, j) => v + w[j] * sp + nrm[j] * .1));
+      const mid = at(K, [dir, l1]), d2 = norm(dir.map((v, j) => v + nrm[j] * .28));
+      J[`f${n}${i + 1}a`] = K; J[`f${n}${i + 1}b`] = mid; J[`f${n}${i + 1}t`] = at(mid, [d2, l2]); J[`f${n}${i + 1}r`] = r * hs;
+    });
+    { const TB = at(wr, [u, .03], [w, .03], [nrm, .012]), td = norm(u.map((v, j) => v * .72 + w[j] * .5 + nrm[j] * .42));
+      const mid = at(TB, [td, .04]), d2 = norm(td.map((v, j) => v + nrm[j] * .25));
+      J[`f${n}0a`] = TB; J[`f${n}0b`] = mid; J[`f${n}0t`] = at(mid, [d2, .032]); J[`f${n}0r`] = .0105 * hs; }
+    J['frame' + n] = { u, w, nrm, hs };
     J['thigh' + n] = S([side * B.hip, .92, 0]); J['shin' + n] = S([side * B.hip, .505, .012]);
     J['foot' + n] = S([side * B.hip, .088, -.012]); J['toe' + n] = S([side * B.hip * 1.05, .03, .16]);
   }
@@ -105,10 +124,6 @@ function primitives(B, J) {
     ell(J['uArm' + n].map((v, i) => v + [side * -.005 * s, -.01 * s, 0][i]), [.066, .066, .06].map(r => r * B.arm[0] / .052), .045);
     cone(J['uArm' + n], J['fArm' + n], B.arm[0] / s, B.arm[1] / s, .03);
     cone(J['fArm' + n], J['hand' + n], B.arm[1] / s * 1.04, B.arm[2] / s, .03);
-    const h = J['hand' + n], tp = J['tip' + n], mid = h.map((v, i) => v + (tp[i] - v) * .45);
-    cone(h, mid, B.arm[2] / s * .95, B.arm[3] / s * 1.18, .022);
-    cone(mid, tp, B.arm[3] / s * 1.18, B.arm[3] / s * .72, .02);
-    cone(h.map((v, i) => v + (tp[i] - v) * .12 + [0, 0, .022 * s][i]), h.map((v, i) => v + (tp[i] - v) * .42 + [0, 0, .045 * s][i]), .014, .011, .016); // thumb
     cone(J['thigh' + n].map((v, i) => i === 1 ? v + .01 * s : v), J['shin' + n], B.leg[0] / s, B.leg[1] / s, .03);
     ell(J['shin' + n].map((v, i) => v + [0, -.13 * s, -.022 * s][i]), [B.leg[1] / s * .95, .11, B.leg[1] / s * 1.0], .05); // calf
     cone(J['shin' + n], J['foot' + n], B.leg[2] / s, B.leg[3] / s, .03);
@@ -123,6 +138,32 @@ function primitives(B, J) {
   }
   return P;
 }
+function handPrimitives(B, J, n) {
+  const s = B.s, { u, w, nrm, hs } = J['frame' + n], P = [], wr = J['hand' + n];
+  const at = (base, ...terms) => base.map((v, i) => v + terms.reduce((a, [vec, k]) => a + vec[i] * k * hs, 0));
+  // the same forearm as the body, so the two surfaces meet seamlessly
+  P.push({ t: 'c', a: J['fArm' + n], b: wr, r1: B.arm[1] * 1.04, r2: B.arm[2], k: .02 * s, zs: 1 });
+  P.push({ t: 'b', c: at(wr, [u, .05], [nrm, -.001]), u, w, n: nrm, h: [.04 * hs, .038 * hs, .0105 * hs], r: .011 * hs, k: .016 * s });  // palm
+  P.push({ t: 'b', c: at(wr, [u, .032], [w, .02], [nrm, .009]), u, w, n: nrm, h: [.014 * hs, .01 * hs, .002 * hs], r: .011 * hs, k: .012 * s }); // thumb pad
+  for (let i = 0; i < 5; i++) {
+    const a = J[`f${n}${i}a`], b = J[`f${n}${i}b`], t = J[`f${n}${i}t`], r = J[`f${n}${i}r`];
+    P.push({ t: 'c', a, b, r1: r, r2: r * .9, k: (i ? .0028 : .008) * s, zs: 1 });
+    P.push({ t: 'c', a: b, b: t, r1: r * .9, r2: r * .8, k: .002 * s, zs: 1 });
+  }
+  for (const p of P) {
+    if (p.t === 'c') { p.cx = p.a.map((v, i) => (v + p.b[i]) / 2); p.br = Math.hypot(...p.a.map((v, i) => v - p.b[i])) / 2 + Math.max(p.r1, p.r2); }
+    else { p.cx = p.c; p.br = Math.hypot(...p.h) + p.r; }
+  }
+  return P;
+}
+function sdOBox(px, py, pz, p) {
+  const dx = px - p.c[0], dy = py - p.c[1], dz = pz - p.c[2];
+  const lx = Math.abs(dx * p.u[0] + dy * p.u[1] + dz * p.u[2]) - p.h[0];
+  const ly = Math.abs(dx * p.w[0] + dy * p.w[1] + dz * p.w[2]) - p.h[1];
+  const lz = Math.abs(dx * p.n[0] + dy * p.n[1] + dz * p.n[2]) - p.h[2];
+  const ox = Math.max(lx, 0), oy = Math.max(ly, 0), oz = Math.max(lz, 0);
+  return Math.hypot(ox, oy, oz) + Math.min(Math.max(lx, ly, lz), 0) - p.r;
+}
 function makeSDF(P) {
   return (x, y, z) => {
     let d = 1e9;
@@ -134,11 +175,63 @@ function makeSDF(P) {
       if (p.t === 'c') {
         if (p.zs !== 1) { const cz = p.cx[2]; v = sdRoundCone(x, y, cz + (z - cz) * p.zs, p.a, p.b, p.r1, p.r2) / p.zs * 1.0; }
         else v = sdRoundCone(x, y, z, p.a, p.b, p.r1, p.r2);
-      } else v = sdEllipsoid(x, y, z, p.c, p.r);
+      } else if (p.t === 'b') v = sdOBox(x, y, z, p);
+      else v = sdEllipsoid(x, y, z, p.c, p.r);
       d = d > 1e8 ? v : smin(d, v, p.k);
     }
     return d;
   };
+}
+
+// ------------------------------------------------------------- polygonise --
+function polygonise(sdf, P, ctr, half, res, keep) {
+  const mc = new MarchingCubes(res, new THREE.MeshBasicMaterial(), false, false, 400000);
+  mc.isolation = 0;
+  const size = mc.size, hs = mc.halfsize;
+  let bx = [1e9, -1e9], by = [1e9, -1e9], bz = [1e9, -1e9];
+  for (const p of P) { bx = [Math.min(bx[0], p.cx[0] - p.br), Math.max(bx[1], p.cx[0] + p.br)]; by = [Math.min(by[0], p.cx[1] - p.br), Math.max(by[1], p.cx[1] + p.br)]; bz = [Math.min(bz[0], p.cx[2] - p.br), Math.max(bz[1], p.cx[2] + p.br)]; }
+  for (let z = 0; z < size; z++) {
+    const wz = ctr[2] + (z - hs) / hs * half;
+    for (let y = 0; y < size; y++) {
+      const wy = ctr[1] + (y - hs) / hs * half;
+      for (let x = 0; x < size; x++) {
+        const wx = ctr[0] + (x - hs) / hs * half, q = x + y * size + z * size * size;
+        if (wx < bx[0] || wx > bx[1] || wy < by[0] || wy > by[1] || wz < bz[0] || wz > bz[1]) { mc.field[q] = -1; continue; }
+        mc.field[q] = -sdf(wx, wy, wz);
+      }
+    }
+  }
+  mc.update();
+  let n = mc.count; const raw = mc.positionArray;
+  let pos = new Float32Array(n * 3);
+  for (let i = 0; i < n * 3; i++) pos[i] = ctr[i % 3] + raw[i] * half;
+  mc.geometry.dispose();
+  if (keep) {   // drop whole triangles outside the region we want
+    const out = [];
+    for (let t = 0; t < n; t += 3) {
+      const cx = (pos[t * 3] + pos[t * 3 + 3] + pos[t * 3 + 6]) / 3, cy = (pos[t * 3 + 1] + pos[t * 3 + 4] + pos[t * 3 + 7]) / 3, cz = (pos[t * 3 + 2] + pos[t * 3 + 5] + pos[t * 3 + 8]) / 3;
+      if (keep(cx, cy, cz)) for (let k = 0; k < 9; k++) out.push(pos[t * 3 + k]);
+    }
+    pos = new Float32Array(out); n = out.length / 3;
+  }
+  const nor = new Float32Array(n * 3), e = half * .002;
+  for (let i = 0; i < n; i++) {
+    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    const nx = sdf(x + e, y, z) - sdf(x - e, y, z), ny = sdf(x, y + e, z) - sdf(x, y - e, z), nz = sdf(x, y, z + e) - sdf(x, y, z - e);
+    const l = Math.hypot(nx, ny, nz) || 1; nor[i * 3] = nx / l; nor[i * 3 + 1] = ny / l; nor[i * 3 + 2] = nz / l;
+  }
+  let agree = 0;
+  for (let t = 0; t < n; t += 3 * 20) {
+    const a = t * 3, b = a + 3, c = a + 6;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+    const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    agree += Math.sign((uy * vz - uz * vy) * nor[a] + (uz * vx - ux * vz) * nor[a + 1] + (ux * vy - uy * vx) * nor[a + 2]);
+  }
+  if (agree < 0) for (let t = 0; t < n; t += 3) for (let k = 0; k < 3; k++) {
+    const a = (t + 1) * 3 + k, b = (t + 2) * 3 + k;
+    [pos[a], pos[b]] = [pos[b], pos[a]]; [nor[a], nor[b]] = [nor[b], nor[a]];
+  }
+  return { pos, nor };
 }
 
 // ------------------------------------------------------------- shaders --
@@ -155,7 +248,7 @@ vec3 tilet(float u, float v) {
   if (dm < .055) c = uTA;
   return c;
 }
-float weave(vec3 p) { return .975 + .025 * sin(p.x * 520.) * sin(p.y * 520. + p.z * 300.); }
+float weave(vec3 p) { return .99 + .01 * sin(p.x * 260.) * sin(p.y * 260. + p.z * 150.); }
 `;
 function patchMaterial(mat, uniforms, colorCode) {
   mat.onBeforeCompile = sh => {
@@ -177,60 +270,36 @@ export function buildAvatar({ body = 'man', outfit = 'habesha_libs', skin = '#8a
   const { J, armLens } = layout(B);
   const P = primitives(B, J), sdf = makeSDF(P);
 
-  // ---- polygonise with marching cubes
-  const ctr = [0, .92 * s, 0], half = 1.0 * s;
-  const mc = new MarchingCubes(res, new THREE.MeshBasicMaterial(), false, false, 400000);
-  mc.isolation = 0;
-  const size = mc.size, hs = mc.halfsize;
-  let bx = [1e9, -1e9], by = [1e9, -1e9], bz = [1e9, -1e9];
-  for (const p of P) { bx = [Math.min(bx[0], p.cx[0] - p.br), Math.max(bx[1], p.cx[0] + p.br)]; by = [Math.min(by[0], p.cx[1] - p.br), Math.max(by[1], p.cx[1] + p.br)]; bz = [Math.min(bz[0], p.cx[2] - p.br), Math.max(bz[1], p.cx[2] + p.br)]; }
-  for (let z = 0; z < size; z++) {
-    const wz = ctr[2] + (z - hs) / hs * half;
-    for (let y = 0; y < size; y++) {
-      const wy = ctr[1] + (y - hs) / hs * half;
-      for (let x = 0; x < size; x++) {
-        const wx = ctr[0] + (x - hs) / hs * half;
-        const q = x + y * size + z * size * size;
-        if (wx < bx[0] || wx > bx[1] || wy < by[0] || wy > by[1] || wz < bz[0] || wz > bz[1]) { mc.field[q] = -1; continue; }
-        mc.field[q] = -sdf(wx, wy, wz);
-      }
-    }
+  // ---- polygonise: body at normal detail, each hand at fine detail so all five fingers are clear
+  const bodyPart = polygonise(sdf, P, [0, .92 * s, 0], 1.0 * s, res);
+  const parts = [bodyPart];
+  const handSDF = {};
+  for (const n of ['L', 'R']) {
+    const HP = handPrimitives(B, J, n), hsdf = makeSDF(HP); handSDF[n] = hsdf;
+    const { u } = J['frame' + n], wr = J['hand' + n];
+    const c = wr.map((v, i) => v + u[i] * .075 * s);
+    const hand = polygonise(hsdf, HP, c, .13 * s, 132, (x, y, z) => (x - wr[0]) * u[0] + (y - wr[1]) * u[1] + (z - wr[2]) * u[2] > -.022 * s);
+    parts.push(hand);
   }
-  mc.update();
-  const vcount = mc.count;
-  const pos = new Float32Array(vcount * 3);
-  for (let i = 0; i < vcount * 3; i++) pos[i] = ctr[i % 3] + mc.positionArray[i] * half;
-  mc.geometry.dispose();
-
-  // normals from the SDF gradient; fix winding to match
-  const nor = new Float32Array(vcount * 3), e = .0015;
-  for (let i = 0; i < vcount; i++) {
-    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
-    let nx = sdf(x + e, y, z) - sdf(x - e, y, z), ny = sdf(x, y + e, z) - sdf(x, y - e, z), nz = sdf(x, y, z + e) - sdf(x, y, z - e);
-    const l = Math.hypot(nx, ny, nz) || 1; nor[i * 3] = nx / l; nor[i * 3 + 1] = ny / l; nor[i * 3 + 2] = nz / l;
-  }
-  {
-    let agree = 0;
-    for (let t = 0; t < vcount; t += 3 * 50) {
-      const a = t * 3, b = a + 3, c = a + 6;
-      const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
-      const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
-      const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
-      agree += Math.sign(cx * nor[a] + cy * nor[a + 1] + cz * nor[a + 2]);
-    }
-    if (agree < 0) for (let t = 0; t < vcount; t += 3) for (let k = 0; k < 3; k++) {
-      const a = (t + 1) * 3 + k, b = (t + 2) * 3 + k;
-      [pos[a], pos[b]] = [pos[b], pos[a]]; [nor[a], nor[b]] = [nor[b], nor[a]];
-    }
-  }
+  const vcount = parts.reduce((a, p) => a + p.pos.length / 3, 0);
+  const pos = new Float32Array(vcount * 3), nor = new Float32Array(vcount * 3);
+  { let o = 0; for (const p of parts) { pos.set(p.pos, o); nor.set(p.nor, o); o += p.pos.length; } }
 
   // ---- skeleton
   const names = ['hips', 'spine', 'chest', 'neck', 'head', 'clavL', 'uArmL', 'fArmL', 'handL', 'clavR', 'uArmR', 'fArmR', 'handR',
     'thighL', 'shinL', 'footL', 'thighR', 'shinR', 'footR'];
+  const fingerNames = [];
+  for (const n of ['L', 'R']) for (let i = 0; i < 5; i++) fingerNames.push(`f${n}${i}a`, `f${n}${i}b`);
+  names.push(...fingerNames);
   const parent = { spine: 'hips', chest: 'spine', neck: 'chest', head: 'neck', clavL: 'chest', uArmL: 'clavL', fArmL: 'uArmL', handL: 'fArmL',
     clavR: 'chest', uArmR: 'clavR', fArmR: 'uArmR', handR: 'fArmR', thighL: 'hips', shinL: 'thighL', footL: 'shinL', thighR: 'hips', shinR: 'thighR', footR: 'shinR' };
   const tail = { hips: J.spine, spine: J.chest, chest: J.neck, neck: J.head, head: J.headTop, clavL: J.uArmL, uArmL: J.fArmL, fArmL: J.handL, handL: J.tipL,
     clavR: J.uArmR, uArmR: J.fArmR, fArmR: J.handR, handR: J.tipR, thighL: J.shinL, shinL: J.footL, footL: J.toeL, thighR: J.shinR, shinR: J.footR, footR: J.toeR };
+  tail.handL = J.knuckL; tail.handR = J.knuckR;
+  for (const n of ['L', 'R']) for (let i = 0; i < 5; i++) {
+    parent[`f${n}${i}a`] = 'hand' + n; parent[`f${n}${i}b`] = `f${n}${i}a`;
+    tail[`f${n}${i}a`] = J[`f${n}${i}b`]; tail[`f${n}${i}b`] = J[`f${n}${i}t`];
+  }
   const bones = {}, list = [];
   for (const n of names) {
     const b = new THREE.Bone(); b.name = n; bones[n] = b; list.push(b);
@@ -249,6 +318,7 @@ export function buildAvatar({ body = 'man', outfit = 'habesha_libs', skin = '#8a
   };
   const idx = Object.fromEntries(names.map((n, i) => [n, i]));
   const armChain = { uArm: 0, fArm: armLens[0], hand: armLens[0] + armLens[1] }, armTotal = armLens[0] + armLens[1] + armLens[2];
+  const palmLen = .09 * s * (B.hand || 1);
   function weightsFor(x, y, z) {
     let best = 1e9, bi = 0, bt = 0; const ds = [];
     segs.forEach((sg, i) => { const [d, t] = segDist(sg, x, y, z); ds.push(d); if (d < best) { best = d; bi = i; bt = t; } });
@@ -260,7 +330,8 @@ export function buildAvatar({ body = 'man', outfit = 'habesha_libs', skin = '#8a
     ws.sort((a, b) => b[1] - a[1]); ws = ws.slice(0, 4);
     const sum = ws.reduce((a, w) => a + w[1], 0);
     let arm = -1; const base = pn.replace(/[LR]$/, '');
-    if (base in armChain) arm = (armChain[base] + bt * (base === 'hand' ? armLens[2] : base === 'fArm' ? armLens[1] : armLens[0])) / armTotal;
+    if (base in armChain) arm = (armChain[base] + bt * (base === 'hand' ? palmLen : base === 'fArm' ? armLens[1] : armLens[0])) / armTotal;
+    if (/^f[LR]\d[ab]$/.test(pn)) arm = 1;
     return { ws: ws.map(([i, w]) => [i, w / sum]), arm };
   }
   const skinIndex = new Uint16Array(vcount * 4), skinWeight = new Float32Array(vcount * 4), aArm = new Float32Array(vcount);
@@ -282,7 +353,7 @@ export function buildAvatar({ body = 'man', outfit = 'habesha_libs', skin = '#8a
   const U = {
     uSkin: { value: C(skin) }, uTop: { value: C(O.top) }, uBottom: { value: C(O.bottom === 'skin' ? (O.dress ? O.top : skin) : O.bottom) }, uShoe: { value: C(O.shoe) },
     uTA: { value: C(tilet[0]) }, uTB: { value: C(tilet[1]) }, uTC: { value: C(tilet[2]) },
-    uWaist: { value: (O.shorts ? O.shorts : .965) * s }, uNeckY: { value: 1.452 * s }, uShoeY: { value: .115 * s }, uHandT: { value: (armLens[0] + armLens[1]) / armTotal },
+    uWaist: { value: (O.shorts ? O.shorts : .965) * s }, uNeckY: { value: 1.452 * s }, uShoeY: { value: .115 * s }, uHandT: { value: (armLens[0] + armLens[1]) / armTotal - .01 },
     uStrip: { value: (O.strip || 0) * s }, uNeckBand: { value: (O.neckBand || 0) * s }, uCuff: { value: new THREE.Vector2(...(O.cuff || [2, 2])) },
     uBib: { value: C(O.bib || O.top) }, uHasBib: { value: O.bib ? 1 : 0 }, uCollar: { value: C(O.collar || O.top) }, uHasCollar: { value: O.collar ? 1 : 0 },
     uBareLegs: { value: O.bottom === 'skin' || O.shorts ? 1 : 0 }, uS: { value: s }, uBareY: { value: (O.dress ? O.dress.hem + .06 : (O.shorts || .965) - .06) * s },
@@ -390,7 +461,7 @@ export function buildAvatar({ body = 'man', outfit = 'habesha_libs', skin = '#8a
   {
     const my = 1.646 * s, mz = surfZ(0, my);
     const mouth = new THREE.Group(); mouth.position.copy(local(0, my, mz - .004 * s)); head.add(mouth);
-    const lipM = mat(new THREE.Color(skin).multiplyScalar(.6).getStyle(), .5);
+    const lipM = mat(new THREE.Color(skin).lerp(new THREE.Color('#9a4a42'), .45).multiplyScalar(.82).getStyle(), .5);
     const inner = new THREE.Mesh(new THREE.CircleGeometry(.019 * s, 28, Math.PI, Math.PI), mat('#3b1510', .9));
     inner.position.set(0, .002 * s, .0035 * s); mouth.add(inner);
     const teeth = new THREE.Mesh(new THREE.PlaneGeometry(.03 * s, .0055 * s), mat('#f5f2ea', .4));
@@ -459,6 +530,18 @@ export function buildAvatar({ body = 'man', outfit = 'habesha_libs', skin = '#8a
       bones[n].position.copy(restPos[n]);
     }
     if (p.hipsOffset) bones.hips.position.add(new THREE.Vector3(...p.hipsOffset));
+    // fingers: curl 0 = open hand, 1 = fist; thumb 0..1 folds across the palm
+    for (const [n, side] of [['L', 1], ['R', -1]]) {
+      const { u, w } = J['frame' + n], c = p['curl' + n] ?? .28, th = p['thumb' + n] ?? .3;
+      const W = new THREE.Vector3(...w), Uv = new THREE.Vector3(...u);
+      for (let i = 1; i < 5; i++) {
+        const ci = c * (1 + (i - 1) * .06);
+        bones[`f${n}${i}a`].quaternion.setFromAxisAngle(W, -side * ci * 1.25);
+        bones[`f${n}${i}b`].quaternion.setFromAxisAngle(W, -side * ci * 1.35);
+      }
+      bones[`f${n}0a`].quaternion.setFromAxisAngle(Uv, side * th * .9);
+      bones[`f${n}0b`].quaternion.setFromAxisAngle(W, -side * th * .5);
+    }
   }
   function setFace({ blink = 0, smile = .5, open = 0, look = [0, 0] } = {}) {
     face.eyes.forEach(e => {
