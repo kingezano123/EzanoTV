@@ -1,5 +1,6 @@
 // Renders scene.html frame by frame with headless Chromium, then encodes MP4 with ffmpeg.
-// Usage: node render.mjs <dir-with-scene.html-and-node_modules/three> <out.mp4> [fps] [onlyFrames,comma,separated]
+// Usage: node render.mjs <dir-with-page-and-node_modules/three> <out.mp4> [fps] [onlyFrames,comma,separated]
+// env: PAGE=dance.html (default scene.html), QUERY=?x=y, AUDIO=music.wav (muxed into the MP4)
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,7 +13,7 @@ const root = path.resolve(process.argv[2] || '.');
 const out = path.resolve(process.argv[3] || 'ezano-tv-3d.mp4');
 const fps = Number(process.argv[4] || 30);
 const only = process.argv[5] ? process.argv[5].split(',').map(Number) : null;
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.otf': 'font/otf' };
 
 const server = http.createServer((req, res) => {
   const p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
@@ -26,7 +27,7 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 page.on('console', m => console.log('[page]', m.text()));
 page.on('pageerror', e => console.error('[page error]', e.message));
-await page.goto(`http://127.0.0.1:${port}/scene.html${process.env.QUERY || ''}`);
+await page.goto(`http://127.0.0.1:${port}/${process.env.PAGE || 'scene.html'}${process.env.QUERY || ''}`);
 await page.waitForFunction('window.READY === true', null, { timeout: 60000 });
 const duration = await page.evaluate('window.DURATION');
 
@@ -42,7 +43,8 @@ for (const i of list) {
 await browser.close(); server.close();
 
 if (!only) {
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(framesDir, 'f%04d.png'),
+  const audio = process.env.AUDIO ? ['-i', path.resolve(process.env.AUDIO), '-c:a', 'aac', '-b:a', '192k', '-shortest'] : [];
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(fps), '-i', path.join(framesDir, 'f%04d.png'), ...audio,
     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', out], { stdio: 'inherit' });
   console.log('wrote', out);
 }

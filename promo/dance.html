@@ -1,0 +1,289 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Eskista in the Park</title>
+<style>
+  html, body { margin: 0; background: #cfe6f2; overflow: hidden; }
+  canvas { display: block; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 1; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./node_modules/three/build/three.module.js",
+  "three/addons/": "./node_modules/three/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="fade"></div>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { buildAvatar } from './avatar.js';
+
+const W = 1280, H = 720, params = new URLSearchParams(location.search);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const smooth = x => x * x * (3 - 2 * x);
+const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const lerp = (a, b, k) => a + (b - a) * k;
+const TAU = Math.PI * 2;
+let seed = 21; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const wobble = (t, s) => Math.sin(t * 1.3 + s) * .5 + Math.sin(t * 2.7 + s * 1.7) * .3 + Math.sin(t * .7 + s * 3.1) * .2;
+
+// ---------------------------------------------------------------- renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H); renderer.setPixelRatio(1);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+const HAZE = new THREE.Color('#dcebf0');
+scene.fog = new THREE.Fog(HAZE, 24, 85);
+const camera = new THREE.PerspectiveCamera(36, W / H, 0.1, 300);
+
+{ // sky
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color('#8ec5ea') }, horizon: { value: HAZE } },
+    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
+    fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying vec3 vP; void main(){ float k = smoothstep(-.02,.45,vP.y); gl_FragColor = vec4(mix(horizon, top, k),1.); }',
+  });
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(200, 32, 16), mat));
+}
+scene.add(new THREE.HemisphereLight('#d8ecff', '#6f9a4c', 1.25));
+const sun = new THREE.DirectionalLight('#fff1dc', 2.7);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -9, right: 9, top: 9, bottom: -9, near: 1, far: 60 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.025; sun.shadow.radius = 3;
+scene.add(sun, sun.target);
+const SUN_OFF = new THREE.Vector3(8, 15, 9);
+
+const clay = (color, rough = .88) => new THREE.MeshStandardMaterial({ color, roughness: rough });
+const shade = m => { m.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); return m; };
+
+{ // ground with gentle far hills
+  const geo = new THREE.PlaneGeometry(260, 260, 130, 130); geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position, col = [], c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i), far = clamp((Math.hypot(x, z - 5) - 30) / 45);
+    pos.setY(i, far * (Math.sin(x * .07) * 2.5 + Math.cos(z * .05 + 1) * 2 + 1.5));
+    const n = (Math.sin(x * .9) * Math.cos(z * .7) + Math.sin(x * .23 + z * .31)) * .5;
+    c.set('#7fbf57').offsetHSL(n * .015, 0, n * .04 - far * .02); col.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.computeVertexNormals();
+  const g = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })); g.receiveShadow = true; scene.add(g);
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(120, 3.4), clay('#e6d3b0', 1));
+  path.rotation.x = -Math.PI / 2; path.position.set(0, .015, -5); path.receiveShadow = true; scene.add(path);
+}
+const greens = ['#6db14b', '#7fc05a', '#5fa544', '#8ccb66'];
+const trees = [];
+function tree(x, z, s = 1) {
+  const g = new THREE.Group(), h = (2.8 + rnd() * 1.6) * s;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(.13 * s, .21 * s, h, 12), clay('#9a7148')); trunk.position.y = h / 2; g.add(trunk);
+  for (let i = 0, n = 2 + Math.floor(rnd() * 2); i < n; i++) {
+    const r = (1.1 + rnd() * .7) * s, m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 5), clay(greens[Math.floor(rnd() * 4)], .9));
+    m.position.set((rnd() - .5) * 1.3 * s, h + r * .45 + i * .35 * s, (rnd() - .5) * s); m.scale.y = .92; g.add(m);
+  }
+  g.position.set(x, 0, z); g.rotation.y = rnd() * 6; g.userData.sway = rnd() * 6; trees.push(g); return shade(g);
+}
+function bush(x, z, s = 1) {
+  const g = new THREE.Group();
+  for (let i = 0; i < 3; i++) { const r = (.45 + rnd() * .3) * s, m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 4), clay(greens[Math.floor(rnd() * 4)], .9)); m.position.set((i - 1) * .55 * s, r * .7, (rnd() - .5) * .4); m.scale.y = .8; g.add(m); }
+  g.position.set(x, 0, z); return shade(g);
+}
+[[-9, -9], [-3.5, -10.5], [3, -9.5], [8.5, -10], [13, -8], [-14, -7], [-7.5, -16], [6, -17], [16, -14], [-18, -13], [0.5, -19],
+ [-12, 2], [-16, 9], [17, 3], [20, 12], [-11, 16], [14, 22], [-4, 27], [9, 30], [-20, 22]].forEach(([x, z], i) => scene.add(tree(x, z, i > 10 ? 1.15 : 1)));
+[[-6.5, -7.2], [2.2, -7.4], [6.8, -7.1], [-2, -7.8], [11, -6.6], [-9.5, 5], [12, 8], [-7, 13], [15, 16]].forEach(([x, z]) => scene.add(bush(x, z, .9 + rnd() * .4)));
+// little flowers in the grass
+{
+  const cols = ['#ffffff', '#f5d36b', '#f08aa0', '#b59cf0'];
+  const geo = new THREE.SphereGeometry(.06, 8, 6);
+  for (let i = 0; i < 260; i++) {
+    const m = new THREE.Mesh(geo, clay(cols[i % 4], .7));
+    const x = (rnd() - .5) * 34, z = -3 + rnd() * 30;
+    if (Math.abs(x - 2.5) < 2.5 && z < 9) continue;
+    m.position.set(x, .05, z); scene.add(m);
+  }
+}
+
+// ---------------------------------------------------------------- dancers
+const SCALE = 1.9;
+const man = buildAvatar({ body: 'man', outfit: 'habesha_libs', skin: '#87533a', hair: 'short' });
+const woman = buildAvatar({ body: 'woman', outfit: 'habesha_kemis', skin: '#7c4a30', hair: 'braids' });
+for (const a of [man, woman]) { a.group.scale.setScalar(SCALE); scene.add(a.group); }
+const MAN0 = new THREE.Vector3(-1.05, 0, 0), WOMAN0 = new THREE.Vector3(1.05, 0, 0);
+
+// ---------------------------------------------------------------- choreography
+// music: 6/8, one bar per second; dotted-quarter beat = 0.5 s, eighth = 1/6 s
+const BEAT = .5, RUN_T = 2.55, RUN_DIR = .5;           // run heading (yaw)
+const RUN_HZ = 1.5, RUN_SPEED = 2.9 * SCALE;           // stride cycles per second, metres/s scaled
+const add = (a, b) => a.map((v, i) => v + b[i]);
+const blendPose = (A, B, k) => {
+  const out = {};
+  for (const key of new Set([...Object.keys(A), ...Object.keys(B)])) {
+    const a = A[key] || [0, 0, 0], b = B[key] || [0, 0, 0];
+    out[key] = a.map((v, i) => lerp(v, b[i], k));
+  }
+  return out;
+};
+function relaxedArms(P, s = 1) {
+  for (const [n, side] of [['L', 1], ['R', -1]]) { P['uArm' + n] = [-.05, 0, -side * .66]; P['fArm' + n] = [-.2 * s, 0, 0]; }
+}
+function eskistaMan(t) {
+  const P = {}; relaxedArms(P);
+  const sp = Math.sin(TAU * 3 * t), sp2 = Math.sin(TAU * 3 * t - .6);
+  const bb = .5 - .5 * Math.cos(TAU * 2 * t);           // knee bounce on every beat
+  for (const [n, side] of [['L', 1], ['R', -1]]) {
+    P['clav' + n] = [0, -side * .16 * sp2, side * (.05 + .2 * Math.max(0, sp))];
+    P['uArm' + n] = [-.25, side * .05, -side * (.48 + .1 * Math.max(0, sp))];
+    P['fArm' + n] = [-.75 - .1 * sp, 0, 0];
+    P['hand' + n] = [0, 0, side * .2];
+  }
+  P.chest = [.07 * sp - .02, .06 * Math.sin(TAU * t), 0];
+  P.spine = [.03, .05 * Math.sin(TAU * t), 0];
+  P.neck = [-.1 * Math.cos(TAU * 3 * t), 0, 0];
+  P.head = [.07 * Math.cos(TAU * 3 * t), .28 * smooth(seg(t, .3, .9)) * (1 - smooth(seg(t, 1.8, 2.3))), 0];
+  P.hips = [0, .08 * Math.sin(TAU * t), 0];
+  for (const n of ['L', 'R']) { P['thigh' + n] = [-.16 * bb, 0, 0]; P['shin' + n] = [.32 * bb, 0, 0]; P['foot' + n] = [-.16 * bb, 0, 0]; }
+  P.hipsOffset = [.025 * Math.sin(TAU * .5 * t), -.03 * bb, 0];
+  return P;
+}
+function eskistaWoman(t) {
+  const P = {};
+  const s3 = Math.sin(TAU * 3 * t);
+  const beatPh = (t / BEAT) % 1, clap = Math.exp(-beatPh * 9);   // hands meet on every beat
+  const bb = .5 - .5 * Math.cos(TAU * 2 * t);
+  for (const [n, side] of [['L', 1], ['R', -1]]) {
+    const up = Math.max(0, side * s3);                              // alternating shoulder shimmy
+    P['clav' + n] = [0, -side * .08 * s3, side * (.04 + .17 * up)];
+    P['uArm' + n] = [-.95, side * (.28 - .12 * clap), -side * (.52 - .08 * clap)];
+    P['fArm' + n] = [-1.25 + .1 * clap, 0, 0];
+    P['hand' + n] = [0, -side * .3, 0];
+  }
+  P.hips = [0, -.05 * Math.sin(TAU * t), .07 * Math.sin(TAU * t)];
+  P.spine = [.02, .04 * Math.sin(TAU * t), -.05 * Math.sin(TAU * t)];
+  P.chest = [0, 0, -.03 * Math.sin(TAU * t)];
+  P.neck = [.12 * Math.sin(TAU * 2 * t), 0, 0];                     // the eskista neck slide
+  P.head = [-.12 * Math.sin(TAU * 2 * t), -.28 * smooth(seg(t, .4, 1.0)) * (1 - smooth(seg(t, 1.9, 2.4))), .05 * Math.sin(TAU * t)];
+  for (const n of ['L', 'R']) { P['thigh' + n] = [-.12 * bb, 0, 0]; P['shin' + n] = [.24 * bb, 0, 0]; P['foot' + n] = [-.12 * bb, 0, 0]; }
+  P.hipsOffset = [.03 * Math.sin(TAU * t), -.022 * bb, 0];
+  return P;
+}
+// hand targets (avatar-local, metres) + elbow pole directions, per move
+function manArms(t) {
+  const sp = Math.sin(TAU * 3 * t);
+  return ['L', 'R'].map((n, i) => { const side = i ? -1 : 1;
+    return [n, [side * .3, 1.0 + .035 * Math.max(0, sp), .13 + .02 * sp], [side, -.4, -.8]]; });
+}
+function womanArms(t) {
+  const ph = (t / BEAT) % 1, gap = .018 + .2 * (1 - Math.exp(-ph * 7)) * Math.exp(-Math.max(0, ph - .55) * 0) ;
+  const open = ph < .5 ? smooth(ph / .5) : 1 - smooth((ph - .5) / .5);   // hands open then meet on the beat
+  const g = .02 + .22 * open;
+  return ['L', 'R'].map((n, i) => { const side = i ? -1 : 1;
+    return [n, [side * g / 2, 1.22 + .04 * open, .3 - .03 * open], [side, -1, -.3]]; });
+}
+function runArms(t, k, s) {
+  const ph = TAU * RUN_HZ * Math.max(0, t - RUN_T) + .2;
+  return ['L', 'R'].map((n, i) => { const side = i ? -1 : 1, sw = -side * Math.sin(ph) * k;
+    return [n, [side * .23 * s, (1.08 + .12 * Math.max(0, sw)) * s, (.06 + .27 * sw) * s], [side * .25, -.3, -1]]; });
+}
+function runPose(t, k = 1) {   // k scales stride (smaller for the long dress)
+  const P = {}, ph = TAU * RUN_HZ * Math.max(0, t - RUN_T) + .2;
+  const legs = [['L', ph], ['R', ph + Math.PI]];
+  for (const [n, p] of legs) {
+    const c = Math.cos(p);
+    P['thigh' + n] = [-.62 * k * Math.sin(p) - .08, 0, 0];
+    P['shin' + n] = [(.25 + 1.15 * k * Math.pow(Math.max(0, c), 1.4)), 0, 0];
+    P['foot' + n] = [.18 * Math.sin(p) - .25 * Math.max(0, c), 0, 0];
+  }
+  for (const [n, side] of [['L', 1], ['R', -1]]) {
+    P['uArm' + n] = [side * .62 * Math.sin(ph) * (k * .5 + .5), 0, -side * .58];
+    P['fArm' + n] = [-1.35, 0, 0];
+    P['hand' + n] = [0, 0, side * .1];
+    P['clav' + n] = [0, 0, side * .03];
+  }
+  P.spine = [.14, -.1 * Math.sin(ph), 0];
+  P.chest = [.04, -.12 * Math.sin(ph), 0];
+  P.hips = [0, .12 * Math.sin(ph), 0];
+  P.neck = [-.1, .05 * Math.sin(ph), 0];
+  P.head = [-.02, .08 * Math.sin(ph) + .15, 0];
+  P.hipsOffset = [0, .045 * Math.abs(Math.sin(ph)) - .03, 0];
+  return P;
+}
+// distance travelled since the run started (speed ramps in smoothly)
+function runDist(t) {
+  let d = 0, n = 120, a = RUN_T - .05;
+  if (t <= a) return 0;
+  const dt = (t - a) / n;
+  for (let i = 0; i < n; i++) { const tt = a + (i + .5) * dt; d += RUN_SPEED * smooth(seg(tt, a, a + .5)) * dt; }
+  return d;
+}
+
+const blinks = { man: [1.1, 3.4, 4.6], woman: [.6, 2.2, 4.1] };
+const blinkAmt = (t, list) => list.reduce((m, b) => Math.max(m, 1 - Math.abs(t - b) / .08), 0);
+
+function place(av, start, danceYaw, t, dancePose, danceArms, runK, name) {
+  const k = smooth(seg(t, RUN_T - .3, RUN_T + .25));
+  const pose = blendPose(dancePose(t), runPose(t, runK), k);
+  av.setPose(pose);
+  const dir = new THREE.Vector3(Math.sin(RUN_DIR), 0, Math.cos(RUN_DIR)), d = runDist(t);
+  av.group.position.copy(start).addScaledVector(dir, d);
+  av.group.rotation.y = lerp(danceYaw, RUN_DIR, smooth(seg(t, RUN_T - .45, RUN_T + .1)));
+  av.group.updateMatrixWorld(true);
+  const da = danceArms(t), ra = runArms(t, runK, av.s);
+  da.forEach(([n, T, Pl], i) => av.reachArm(n, T.map((v, j) => lerp(v * (j === 1 || j === 2 || j === 0 ? av.s : 1), ra[i][1][j], k)), Pl.map((v, j) => lerp(v, ra[i][2][j], k))));
+  const laugh = smooth(seg(t, 1.9, 2.3));
+  av.setFace({ blink: blinkAmt(t, blinks[name]), smile: 1, open: lerp(.25 + .1 * Math.max(0, Math.sin(TAU * 2 * t)), .45, laugh) });
+}
+
+// ---------------------------------------------------------------- camera
+function camAt(t) {
+  const mid = MAN0.clone().add(WOMAN0).multiplyScalar(.5);
+  const dir = new THREE.Vector3(Math.sin(RUN_DIR), 0, Math.cos(RUN_DIR));
+  const a = lerp(.32, -.12, ease(seg(t, 0, RUN_T)));
+  const dPos = new THREE.Vector3(Math.sin(a) * 7.9, 2.3, Math.cos(a) * 7.9), dLook = new THREE.Vector3(0, 1.9, 0);
+  const runMid = mid.clone().addScaledVector(dir, runDist(t));
+  const side = new THREE.Vector3(-dir.z, 0, dir.x);
+  const rPos = runMid.clone().addScaledVector(dir, 8.4).addScaledVector(side, 2.6).add(new THREE.Vector3(0, 2.2, 0));
+  const rLook = runMid.clone().add(new THREE.Vector3(0, 1.75, 0));
+  const k = ease(seg(t, RUN_T - .1, RUN_T + .8));
+  const P = dPos.lerp(rPos, k), L = dLook.lerp(rLook, k);
+  P.x += wobble(t * .8, 1) * .05; P.y += wobble(t * .8, 2) * .04;
+  return [P, L, runMid];
+}
+
+// ---------------------------------------------------------------- post (contact shadows)
+let composer = null;
+if (params.get('ao') !== '0') {
+  composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples: 4 }));
+  composer.addPass(new RenderPass(scene, camera));
+  const ao = new GTAOPass(scene, camera, W, H);
+  ao.updateGtaoMaterial({ radius: .5, distanceExponent: 1.5, thickness: 1, scale: 1.1, samples: 12 });
+  ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+  ao.blendIntensity = .85;
+  composer.addPass(ao); composer.addPass(new OutputPass());
+}
+
+window.DURATION = 5;
+window.renderAt = (t) => {
+  place(man, MAN0, .3, t, eskistaMan, manArms, 1, 'man');
+  place(woman, WOMAN0, -.3, t, eskistaWoman, womanArms, .72, 'woman');
+  trees.forEach(tr => { tr.rotation.z = Math.sin(t * 1.1 + tr.userData.sway) * .012; });
+  const [P, L, focus] = camAt(t);
+  camera.position.copy(P); camera.lookAt(L);
+  if (params.get('cam') === 'close') { camera.position.set(focus.x + .2, 2.9, focus.z + 3.4); camera.lookAt(focus.x, 2.5, focus.z); }
+  sun.target.position.copy(focus); sun.position.copy(focus).add(SUN_OFF);
+  document.getElementById('fade').style.opacity = 1 - seg(t, 0, .3) + seg(t, 4.7, 5);
+  if (composer) composer.render(); else renderer.render(scene, camera);
+};
+window.renderAt(0);
+window.READY = true;
+</script>
+</body>
+</html>
